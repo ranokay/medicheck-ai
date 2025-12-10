@@ -14,8 +14,11 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"convex": "catalog:",
+		"@ai-sdk/openai": "^2.0.80",
+		"@convex-dev/agent": "^0.3.2",
+		"@convex-dev/better-auth": "catalog:",
 		"better-auth": "catalog:",
-		"@convex-dev/better-auth": "catalog:"
+		"convex": "catalog:",
+		"openai": "^4.73.0"
 	}
 }

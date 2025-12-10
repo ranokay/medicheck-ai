@@ -7,8 +7,9 @@ import {
 	useNavigate,
 } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { ArrowLeft, Brain, ClipboardList, UserPlus } from "lucide-react";
 import { useState } from "react";
+import { AISymptomChecker } from "@/components/ai-symptom-checker";
 import { PatientSearch } from "@/components/patient-search";
 import { SymptomChecker } from "@/components/symptom-checker";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,9 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
+import { calculateAge } from "@/lib/types";
 
 type ConsultationStep = "select-patient" | "symptoms";
 
@@ -147,10 +150,35 @@ function NewConsultationPage() {
 						</Card>
 					)}
 
-					<SymptomChecker
-						patientId={selectedPatientId}
-						onComplete={handleConsultationComplete}
-					/>
+					{/* Tabs for AI vs Manual mode */}
+					<Tabs defaultValue="ai" className="w-full">
+						<TabsList className="grid w-full grid-cols-2">
+							<TabsTrigger value="ai" className="flex items-center gap-2">
+								<Brain className="h-4 w-4" />
+								Diagnostic AI (Monarch KG)
+							</TabsTrigger>
+							<TabsTrigger value="manual" className="flex items-center gap-2">
+								<ClipboardList className="h-4 w-4" />
+								Manual
+							</TabsTrigger>
+						</TabsList>
+						<TabsContent value="ai" className="mt-4">
+							{selectedPatient && (
+								<AISymptomChecker
+									patientId={selectedPatientId}
+									patientAge={calculateAge(selectedPatient.dateOfBirth)}
+									patientSex={selectedPatient.sex}
+									onComplete={handleConsultationComplete}
+								/>
+							)}
+						</TabsContent>
+						<TabsContent value="manual" className="mt-4">
+							<SymptomChecker
+								patientId={selectedPatientId}
+								onComplete={handleConsultationComplete}
+							/>
+						</TabsContent>
+					</Tabs>
 				</div>
 			)}
 		</div>
