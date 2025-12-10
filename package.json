@@ -15,7 +15,7 @@
 		}
 	},
 	"scripts": {
-		"check": "biome check --write .",
+		"check": "biome check --write --unsafe .",
 		"dev": "turbo dev",
 		"build": "turbo build",
 		"check-types": "turbo check-types",
@@ -23,7 +23,7 @@
 		"dev:web": "turbo -F web dev",
 		"dev:server": "turbo -F @medicheck-ai/backend dev",
 		"dev:setup": "turbo -F @medicheck-ai/backend dev:setup",
-		"clean": "turbo clean"
+		"clean": "turbo clean && rm -rf node_modules .turbo bun.lock"
 	},
 	"devDependencies": {
 		"turbo": "^2.6.3",

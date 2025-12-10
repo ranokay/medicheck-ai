@@ -9,9 +9,11 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as diagnosis from "../diagnosis.js";
+import type * as consultations from "../consultations.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
+import type * as patients from "../patients.js";
+import type * as staff from "../staff.js";
 
 import type {
   ApiFromModules,
@@ -21,9 +23,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  diagnosis: typeof diagnosis;
+  consultations: typeof consultations;
   healthCheck: typeof healthCheck;
   http: typeof http;
+  patients: typeof patients;
+  staff: typeof staff;
 }>;
 
 /**
