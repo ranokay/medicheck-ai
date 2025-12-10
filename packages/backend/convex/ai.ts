@@ -40,12 +40,18 @@ interface KGQueryResult {
 }
 
 interface GeneratedQuestion {
-	type: "question";
 	questionId: string;
 	questionTextRo: string;
 	questionType: "yes_no" | "single_choice" | "scale";
 	options?: string[];
 	phenotypeEn: string;
+}
+
+interface GeneratedQuestionBatch {
+	type: "questions";
+	batchId: string;
+	theme: string;
+	questions: GeneratedQuestion[];
 	reasoning: string;
 }
 
@@ -102,16 +108,13 @@ interface MonarchSemsimResult {
 }
 
 interface MonarchAssociation {
-	subject: {
-		id: string;
-		name: string;
-		category: string;
-	};
-	object: {
-		id: string;
-		name: string;
-		category: string;
-	};
+	// Association API returns flat fields, not nested objects
+	subject: string;
+	subject_label?: string;
+	subject_category?: string;
+	object: string;
+	object_label?: string;
+	object_category?: string;
 	predicate: string;
 }
 
@@ -225,14 +228,26 @@ async function fetchCandidateDiseases(
 			console.log("Semsim results:", data.items?.length || 0, "diseases found");
 
 			if (data.items && data.items.length > 0) {
-				return data.items.map((item) => ({
-					id: item.subject.id,
-					name: item.subject.name,
-					description: undefined,
-					matchedPhenotypes: hpoIds.length,
-					totalPhenotypes: 10,
-					matchScore: item.score || item.similarity?.phenodigm_score || 0,
-				}));
+				// Semsim returns a similarity score - normalize it to 0-1 range
+				const maxScore = Math.max(
+					...data.items.map(
+						(item) => item.score || item.similarity?.phenodigm_score || 0,
+					),
+				);
+				return data.items.map((item) => {
+					const rawScore = item.score || item.similarity?.phenodigm_score || 0;
+					// Normalize score relative to best match, scaled by symptom coverage
+					const normalizedScore =
+						maxScore > 0 ? (rawScore / maxScore) * 0.8 + 0.1 : 0.5;
+					return {
+						id: item.subject.id,
+						name: item.subject.name,
+						description: undefined,
+						matchedPhenotypes: hpoIds.length,
+						totalPhenotypes: phenotypes.length,
+						matchScore: normalizedScore,
+					};
+				});
 			}
 		} else {
 			console.log(
@@ -240,11 +255,11 @@ async function fetchCandidateDiseases(
 			);
 		}
 
-		// Fallback: Use entity association endpoint to find diseases for each phenotype
-		// The phenotype is the OBJECT in disease-phenotype associations, so we query
-		// from the phenotype's perspective to get diseases associated with it
+		// Fallback: Use association endpoint with object parameter
+		// In DiseaseToPhenotypicFeatureAssociation, phenotype is the OBJECT
+		// So we query: /association?object=HP:xxx&category=biolink:DiseaseToPhenotypicFeatureAssociation
 		console.log(
-			"Using entity association fallback for phenotypes:",
+			"Using association fallback for phenotypes:",
 			hpoIds.slice(0, 3),
 		);
 		const diseases: CandidateDisease[] = [];
@@ -253,9 +268,8 @@ async function fetchCandidateDiseases(
 		// Query associations for the first few phenotypes
 		for (const hpoId of hpoIds.slice(0, 3)) {
 			try {
-				// Use the entity endpoint to get diseases associated with this phenotype
-				// GET /entity/{id}/{category} - get associations for an entity by category
-				const assocUrl = `${MONARCH_API_BASE}/entity/${encodeURIComponent(hpoId)}/biolink:Disease?limit=20`;
+				// Use the association endpoint with object parameter (phenotype is the object)
+				const assocUrl = `${MONARCH_API_BASE}/association?object=${encodeURIComponent(hpoId)}&category=biolink:DiseaseToPhenotypicFeatureAssociation&limit=30`;
 				console.log(
 					"Fetching disease associations for phenotype:",
 					hpoId,
@@ -267,7 +281,7 @@ async function fetchCandidateDiseases(
 				if (!assocResponse.ok) {
 					const errorText = await assocResponse.text();
 					console.log(
-						`Entity association fetch failed for ${hpoId}: ${assocResponse.status}`,
+						`Association fetch failed for ${hpoId}: ${assocResponse.status}`,
 						errorText.slice(0, 200),
 					);
 					continue;
@@ -283,32 +297,26 @@ async function fetchCandidateDiseases(
 
 				if (assocData.items) {
 					for (const assoc of assocData.items) {
-						// The disease is typically in the subject field when querying from phenotype
-						const disease =
-							assoc.subject?.id?.startsWith("MONDO:") ||
-							assoc.subject?.id?.startsWith("OMIM:") ||
-							assoc.subject?.category?.includes("Disease")
-								? assoc.subject
-								: assoc.object?.id?.startsWith("MONDO:") ||
-										assoc.object?.id?.startsWith("OMIM:") ||
-										assoc.object?.category?.includes("Disease")
-									? assoc.object
-									: null;
+						// In DiseaseToPhenotypicFeatureAssociation, the disease IS the subject
+						const diseaseId = assoc.subject;
+						const diseaseName = assoc.subject_label;
 
-						if (disease?.id) {
-							const existing = diseaseMap.get(disease.id);
+						if (diseaseId) {
+							const existing = diseaseMap.get(diseaseId);
 							if (existing) {
 								existing.matchedPhenotypes++;
+								// Score is proportion of patient's symptoms that match this disease
+								// Higher matchedPhenotypes = higher score
 								existing.matchScore =
-									existing.matchedPhenotypes / hpoIds.length;
+									existing.matchedPhenotypes / phenotypes.length;
 							} else {
-								diseaseMap.set(disease.id, {
-									id: disease.id,
-									name: disease.name || "Unknown Disease",
+								diseaseMap.set(diseaseId, {
+									id: diseaseId,
+									name: diseaseName || "Unknown Disease",
 									description: undefined,
 									matchedPhenotypes: 1,
-									totalPhenotypes: hpoIds.length,
-									matchScore: 1 / hpoIds.length,
+									totalPhenotypes: phenotypes.length, // Total patient symptoms
+									matchScore: 1 / phenotypes.length,
 								});
 							}
 						}
@@ -333,6 +341,7 @@ async function fetchCandidateDiseases(
 
 /**
  * Get related phenotypes for the given diseases to generate follow-up questions
+ * Uses the /association endpoint which properly handles MONDO disease IDs
  */
 async function fetchRelatedPhenotypes(
 	diseaseIds: string[],
@@ -346,53 +355,63 @@ async function fetchRelatedPhenotypes(
 	const excludeLower = new Set(excludePhenotypes.map((p) => p.toLowerCase()));
 
 	// Query associations for each disease (limit to first 3 to avoid rate limits)
+	// Use /association endpoint with subject= parameter for MONDO IDs
 	for (const diseaseId of diseaseIds.slice(0, 3)) {
 		try {
 			const params = new URLSearchParams({
+				subject: diseaseId,
 				category: "biolink:DiseaseToPhenotypicFeatureAssociation",
 				limit: "20",
 			});
 
-			const response = await fetch(
-				`${MONARCH_API_BASE}/entity/${encodeURIComponent(diseaseId)}/biolink:PhenotypicFeature?${params}`,
-			);
+			const url = `${MONARCH_API_BASE}/association?${params}`;
+			console.log(`Fetching phenotypes for disease ${diseaseId}:`, url);
+
+			const response = await fetch(url);
 
 			if (!response.ok) {
 				console.error(
-					`Monarch association failed for ${diseaseId}: ${response.status}`,
+					`Monarch phenotype fetch failed for ${diseaseId}: ${response.status}`,
 				);
 				continue;
 			}
 
-			const data = (await response.json()) as { items: MonarchAssociation[] };
+			const data = (await response.json()) as {
+				items: MonarchAssociation[];
+				total: number;
+			};
 
 			if (data.items) {
 				for (const assoc of data.items) {
-					const phenotype = assoc.object || assoc.subject;
-					if (phenotype.category?.includes("PhenotypicFeature")) {
-						if (!excludeLower.has(phenotype.name.toLowerCase())) {
-							// Check if already in results
-							const existing = results.find((r) => r.id === phenotype.id);
-							if (existing) {
-								existing.diseaseCount++;
-								if (!existing.diseaseNames.includes(diseaseId)) {
-									existing.diseaseNames.push(diseaseId);
-								}
-							} else {
-								results.push({
-									id: phenotype.id,
-									name: phenotype.name,
-									description: undefined,
-									diseaseCount: 1,
-									diseaseNames: [diseaseId],
-								});
+					// The object is the phenotype (HP:xxxx)
+					const phenotypeId = assoc.object || "";
+					const phenotypeName = assoc.object_label || "";
+
+					if (
+						phenotypeId.startsWith("HP:") &&
+						!excludeLower.has(phenotypeName.toLowerCase())
+					) {
+						// Check if already in results
+						const existing = results.find((r) => r.id === phenotypeId);
+						if (existing) {
+							existing.diseaseCount++;
+							if (!existing.diseaseNames.includes(diseaseId)) {
+								existing.diseaseNames.push(diseaseId);
 							}
+						} else {
+							results.push({
+								id: phenotypeId,
+								name: phenotypeName,
+								description: undefined,
+								diseaseCount: 1,
+								diseaseNames: [diseaseId],
+							});
 						}
 					}
 				}
 			}
 		} catch (error) {
-			console.error(`Monarch association error for ${diseaseId}:`, error);
+			console.error(`Monarch phenotype fetch error for ${diseaseId}:`, error);
 		}
 	}
 
@@ -535,13 +554,18 @@ export const generateNextQuestion = internalAction({
 			{ prompt: userPrompt },
 		);
 
+		// New batch format with multiple questions
 		const parsed = parseJSON<{
-			type: "question";
-			questionId: string;
-			questionTextRo: string;
-			questionType: "yes_no" | "single_choice" | "scale";
-			options?: string[];
-			phenotypeEn: string;
+			type: "questions";
+			batchId: string;
+			theme: string;
+			questions: Array<{
+				questionId: string;
+				questionTextRo: string;
+				questionType: "yes_no" | "single_choice" | "scale";
+				options?: string[];
+				phenotypeEn: string;
+			}>;
 			reasoning: string;
 		}>(result.text);
 
@@ -694,8 +718,8 @@ export const startDiagnosticSession = action({
 				candidateDiseases: CandidateDisease[];
 		  } & GeneratedDiagnosis)
 		| {
-				status: "question";
-				question: GeneratedQuestion;
+				status: "questions";
+				questionBatch: GeneratedQuestionBatch;
 				symptomsEn: string[];
 				chiefComplaintEn: string;
 				candidateDiseases: CandidateDisease[];
@@ -771,27 +795,30 @@ export const startDiagnosticSession = action({
 			};
 		}
 
-		// Step 5: Generate first question
-		const question = (await ctx.runAction(internal.ai.generateNextQuestion, {
-			patientAge: args.patientAge,
-			patientSex: args.patientSex,
-			confirmedSymptomsEn: extracted.symptomsEn,
-			candidateDiseases: kgResult.diseases
-				.slice(0, 5)
-				.map((d: CandidateDisease) => ({
-					id: d.id,
-					name: d.name,
-					matchScore: d.matchScore,
-				})),
-			previousQA: [],
-			suggestedPhenotypes: relatedPhenotypes.map(
-				(p: RelatedPhenotype) => p.name,
-			),
-		})) as GeneratedQuestion;
+		// Step 5: Generate first batch of questions
+		const questionBatch = (await ctx.runAction(
+			internal.ai.generateNextQuestion,
+			{
+				patientAge: args.patientAge,
+				patientSex: args.patientSex,
+				confirmedSymptomsEn: extracted.symptomsEn,
+				candidateDiseases: kgResult.diseases
+					.slice(0, 5)
+					.map((d: CandidateDisease) => ({
+						id: d.id,
+						name: d.name,
+						matchScore: d.matchScore,
+					})),
+				previousQA: [],
+				suggestedPhenotypes: relatedPhenotypes.map(
+					(p: RelatedPhenotype) => p.name,
+				),
+			},
+		)) as GeneratedQuestionBatch;
 
 		return {
-			status: "question" as const,
-			question,
+			status: "questions" as const,
+			questionBatch,
 			symptomsEn: extracted.symptomsEn,
 			chiefComplaintEn: extracted.chiefComplaintEn,
 			candidateDiseases: kgResult.diseases,
@@ -841,13 +868,17 @@ export const processAnswer = action({
 				phenotypeEn: v.string(),
 			}),
 		),
-		// The answer to the current question
-		currentAnswer: v.object({
-			question: v.string(),
-			answer: v.string(),
-			phenotypeEn: v.string(),
-			isConfirmed: v.boolean(), // true if patient has this symptom
-		}),
+		// Batch answers from all questions in the batch
+		batchAnswers: v.array(
+			v.object({
+				question: v.string(),
+				answer: v.string(),
+				phenotypeEn: v.string(),
+				isConfirmed: v.boolean(), // true if patient has this symptom
+			}),
+		),
+		// Optional additional notes from the nurse
+		additionalNotes: v.optional(v.string()),
 	},
 	handler: async (
 		ctx,
@@ -861,8 +892,8 @@ export const processAnswer = action({
 				allQA: QAEntry[];
 		  } & GeneratedDiagnosis)
 		| {
-				status: "question";
-				question: GeneratedQuestion;
+				status: "questions";
+				questionBatch: GeneratedQuestionBatch;
 				symptomsEn: string[];
 				deniedSymptomsEn: string[];
 				candidateDiseases: ArgDisease[];
@@ -870,38 +901,67 @@ export const processAnswer = action({
 				allQA: QAEntry[];
 		  }
 	> => {
-		// Update symptoms based on answer
-		const updatedSymptomsEn = args.currentAnswer.isConfirmed
-			? [...args.currentSymptomsEn, args.currentAnswer.phenotypeEn]
-			: args.currentSymptomsEn;
+		// Update symptoms based on all batch answers
+		const confirmedPhenotypes = args.batchAnswers
+			.filter((a) => a.isConfirmed)
+			.map((a) => a.phenotypeEn);
+		const deniedPhenotypes = args.batchAnswers
+			.filter((a) => !a.isConfirmed)
+			.map((a) => a.phenotypeEn);
 
-		const updatedDeniedEn = args.currentAnswer.isConfirmed
-			? args.deniedSymptomsEn
-			: [...args.deniedSymptomsEn, args.currentAnswer.phenotypeEn];
-
-		const allQA: QAEntry[] = [
-			...args.previousQA,
-			{
-				question: args.currentAnswer.question,
-				answer: args.currentAnswer.answer,
-				phenotypeEn: args.currentAnswer.phenotypeEn,
-			},
+		const updatedSymptomsEn = [
+			...args.currentSymptomsEn,
+			...confirmedPhenotypes,
 		];
+		const updatedDeniedEn = [...args.deniedSymptomsEn, ...deniedPhenotypes];
 
-		// Re-query KG with updated symptoms if new symptom confirmed
-		let diseases: ArgDisease[] = args.candidateDiseases;
-		if (args.currentAnswer.isConfirmed) {
-			const kgResult = (await ctx.runAction(internal.ai.getCandidateDiseases, {
-				symptomsEn: updatedSymptomsEn,
-			})) as KGQueryResult;
-			diseases = kgResult.diseases.map((d: CandidateDisease) => ({
+		const newQAEntries: QAEntry[] = args.batchAnswers.map((answer) => ({
+			question: answer.question,
+			answer: answer.answer,
+			phenotypeEn: answer.phenotypeEn,
+		}));
+
+		// If nurse provided additional notes, extract symptoms from them
+		if (args.additionalNotes?.trim()) {
+			const extracted = (await ctx.runAction(internal.ai.extractSymptoms, {
+				chiefComplaint: "",
+				symptomsText: args.additionalNotes,
+			})) as ExtractedSymptoms;
+
+			// Add newly extracted symptoms (dedup)
+			const existingLower = new Set(
+				updatedSymptomsEn.map((s) => s.toLowerCase()),
+			);
+			for (const symptom of extracted.symptomsEn) {
+				if (!existingLower.has(symptom.toLowerCase())) {
+					updatedSymptomsEn.push(symptom);
+					existingLower.add(symptom.toLowerCase());
+				}
+			}
+
+			// Add a QA entry for the notes
+			newQAEntries.push({
+				question: "Note suplimentare de la asistent",
+				answer: args.additionalNotes,
+				phenotypeEn: extracted.symptomsEn.join(", "),
+			});
+		}
+
+		const allQA: QAEntry[] = [...args.previousQA, ...newQAEntries];
+
+		// Always re-query KG with all symptoms to get updated candidate diseases
+		const kgResult = (await ctx.runAction(internal.ai.getCandidateDiseases, {
+			symptomsEn: updatedSymptomsEn,
+		})) as KGQueryResult;
+		const diseases: ArgDisease[] = kgResult.diseases.map(
+			(d: CandidateDisease) => ({
 				id: d.id,
 				name: d.name,
 				matchScore: d.matchScore,
 				matchedPhenotypes: d.matchedPhenotypes,
 				totalPhenotypes: d.totalPhenotypes,
-			}));
-		}
+			}),
+		);
 
 		// Decide next step
 		const decision = (await ctx.runAction(internal.ai.decideNextStep, {
@@ -934,31 +994,34 @@ export const processAnswer = action({
 			};
 		}
 
-		// Generate next question
+		// Generate next batch of questions
 		const diseaseIds = diseases.slice(0, 5).map((d: ArgDisease) => d.id);
 		const relatedPhenotypes = await fetchRelatedPhenotypes(diseaseIds, [
 			...updatedSymptomsEn,
 			...updatedDeniedEn,
 		]);
 
-		const question = (await ctx.runAction(internal.ai.generateNextQuestion, {
-			patientAge: args.patientAge,
-			patientSex: args.patientSex,
-			confirmedSymptomsEn: updatedSymptomsEn,
-			candidateDiseases: diseases.slice(0, 5).map((d: ArgDisease) => ({
-				id: d.id,
-				name: d.name,
-				matchScore: d.matchScore,
-			})),
-			previousQA: allQA,
-			suggestedPhenotypes: relatedPhenotypes.map(
-				(p: RelatedPhenotype) => p.name,
-			),
-		})) as GeneratedQuestion;
+		const questionBatch = (await ctx.runAction(
+			internal.ai.generateNextQuestion,
+			{
+				patientAge: args.patientAge,
+				patientSex: args.patientSex,
+				confirmedSymptomsEn: updatedSymptomsEn,
+				candidateDiseases: diseases.slice(0, 5).map((d: ArgDisease) => ({
+					id: d.id,
+					name: d.name,
+					matchScore: d.matchScore,
+				})),
+				previousQA: allQA,
+				suggestedPhenotypes: relatedPhenotypes.map(
+					(p: RelatedPhenotype) => p.name,
+				),
+			},
+		)) as GeneratedQuestionBatch;
 
 		return {
-			status: "question" as const,
-			question,
+			status: "questions" as const,
+			questionBatch,
 			symptomsEn: updatedSymptomsEn,
 			deniedSymptomsEn: updatedDeniedEn,
 			candidateDiseases: diseases,

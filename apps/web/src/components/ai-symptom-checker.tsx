@@ -50,6 +50,12 @@ interface Question {
 	questionType: "yes_no" | "single_choice" | "scale";
 	options?: string[];
 	phenotypeEn: string;
+}
+
+interface QuestionBatch {
+	batchId: string;
+	theme: string;
+	questions: Question[];
 	reasoning?: string;
 }
 
@@ -67,7 +73,7 @@ interface QAEntry {
 	phenotypeEn: string;
 }
 
-type Step = "initial" | "processing" | "question" | "diagnosis";
+type Step = "initial" | "processing" | "questions" | "diagnosis";
 
 interface AISymptomCheckerProps {
 	patientId: Id<"patients">;
@@ -94,9 +100,10 @@ export function AISymptomChecker({
 	const [chiefComplaint, setChiefComplaint] = useState("");
 	const [initialSymptoms, setInitialSymptoms] = useState("");
 
-	// AI session state
-	const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
-	const [currentAnswer, setCurrentAnswer] = useState<string>("");
+	// AI session state - batch questions
+	const [currentBatch, setCurrentBatch] = useState<QuestionBatch | null>(null);
+	const [batchAnswers, setBatchAnswers] = useState<Record<string, string>>({});
+	const [additionalNotes, setAdditionalNotes] = useState("");
 	const [symptomsEn, setSymptomsEn] = useState<string[]>([]);
 	const [deniedSymptomsEn, setDeniedSymptomsEn] = useState<string[]>([]);
 	const [candidateDiseases, setCandidateDiseases] = useState<
@@ -177,12 +184,13 @@ export function AISymptomChecker({
 					confidenceNote: result.confidenceNote,
 				});
 				setStep("diagnosis");
-			} else if (result.status === "question") {
-				// Question flow
+			} else if (result.status === "questions") {
+				// Batch questions flow
 				setSymptomsEn(result.symptomsEn);
 				setCandidateDiseases(result.candidateDiseases);
-				setCurrentQuestion(result.question);
-				setStep("question");
+				setCurrentBatch(result.questionBatch);
+				setBatchAnswers({});
+				setStep("questions");
 			}
 		} catch (error) {
 			console.error("AI diagnosis error:", error);
@@ -205,18 +213,38 @@ export function AISymptomChecker({
 		startDiagnosticSession,
 	]);
 
-	// Handle question answer
+	// Handle batch answers submit
 	const handleAnswerSubmit = useCallback(async () => {
-		if (!currentQuestion || !currentAnswer || !consultationId) return;
+		if (!currentBatch || !consultationId) return;
+
+		// Check if all questions have been answered
+		const allAnswered = currentBatch.questions.every(
+			(q: Question) =>
+				batchAnswers[q.questionId] && batchAnswers[q.questionId].trim() !== "",
+		);
+		if (!allAnswered) {
+			toast.error("Vă rugăm să răspundeți la toate întrebările");
+			return;
+		}
 
 		setIsProcessing(true);
-		setProcessingMessage("Se procesează răspunsul...");
+		setProcessingMessage("Se procesează răspunsurile...");
 
 		try {
-			const isConfirmed =
-				currentAnswer === "da" ||
-				currentAnswer === "yes" ||
-				currentAnswer.toLowerCase().includes("da");
+			// Process all answers from the batch
+			const answersArray = currentBatch.questions.map((q: Question) => {
+				const answer = batchAnswers[q.questionId];
+				const isConfirmed =
+					answer === "da" ||
+					answer === "yes" ||
+					answer.toLowerCase().includes("da");
+				return {
+					question: q.questionTextRo,
+					answer,
+					phenotypeEn: q.phenotypeEn,
+					isConfirmed,
+				};
+			});
 
 			const result = await processAnswer({
 				consultationId,
@@ -232,12 +260,8 @@ export function AISymptomChecker({
 					totalPhenotypes: d.totalPhenotypes,
 				})),
 				previousQA: qaHistory,
-				currentAnswer: {
-					question: currentQuestion.questionTextRo,
-					answer: currentAnswer,
-					phenotypeEn: currentQuestion.phenotypeEn,
-					isConfirmed,
-				},
+				batchAnswers: answersArray,
+				additionalNotes: additionalNotes.trim() || undefined,
 			});
 
 			// Update state
@@ -245,6 +269,7 @@ export function AISymptomChecker({
 			setDeniedSymptomsEn(result.deniedSymptomsEn);
 			setCandidateDiseases(result.candidateDiseases);
 			setQaHistory(result.allQA);
+			setAdditionalNotes(""); // Clear notes for next batch
 
 			if (result.status === "diagnosis") {
 				setDiagnosisResult({
@@ -254,20 +279,21 @@ export function AISymptomChecker({
 					confidenceNote: result.confidenceNote,
 				});
 				setStep("diagnosis");
-			} else if (result.status === "question") {
-				setCurrentQuestion(result.question);
-				setCurrentAnswer("");
+			} else if (result.status === "questions") {
+				setCurrentBatch(result.questionBatch);
+				setBatchAnswers({});
 			}
 		} catch (error) {
 			console.error("Process answer error:", error);
-			toast.error("Eroare la procesarea răspunsului");
+			toast.error("Eroare la procesarea răspunsurilor");
 		} finally {
 			setIsProcessing(false);
 			setProcessingMessage("");
 		}
 	}, [
-		currentQuestion,
-		currentAnswer,
+		currentBatch,
+		batchAnswers,
+		additionalNotes,
 		consultationId,
 		patientAge,
 		patientSex,
@@ -315,7 +341,7 @@ export function AISymptomChecker({
 				return 10;
 			case "processing":
 				return 30;
-			case "question":
+			case "questions":
 				return 50 + Math.min(qaHistory.length * 10, 40);
 			case "diagnosis":
 				return 100;
@@ -403,17 +429,18 @@ export function AISymptomChecker({
 				</Card>
 			)}
 
-			{/* Question flow */}
-			{step === "question" && currentQuestion && (
+			{/* Question flow - Batch questions */}
+			{step === "questions" && currentBatch && (
 				<Card>
 					<CardHeader>
 						<CardTitle className="flex items-center gap-2">
 							<Stethoscope className="h-5 w-5" />
-							Întrebare de Diagnostic #{qaHistory.length + 1}
+							{currentBatch.theme ||
+								`Set de Întrebări #${Math.floor(qaHistory.length / 3) + 1}`}
 						</CardTitle>
 						<CardDescription>
-							Bazat pe simptomele raportate, AI-ul are nevoie de mai multe
-							informații.
+							Vă rugăm să răspundeți la toate întrebările de mai jos pentru a
+							continua evaluarea.
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="space-y-6">
@@ -435,59 +462,121 @@ export function AISymptomChecker({
 
 						<Separator />
 
-						{/* Question */}
-						<div className="space-y-4">
-							<p className="font-medium text-lg">
-								{currentQuestion.questionTextRo}
-							</p>
-
-							{currentQuestion.questionType === "yes_no" && (
-								<RadioGroup
-									value={currentAnswer}
-									onValueChange={setCurrentAnswer}
-									className="space-y-2"
+						{/* Batch Questions */}
+						<div className="space-y-6">
+							{currentBatch.questions.map((question, qIndex) => (
+								<div
+									key={question.questionId}
+									className="space-y-3 rounded-lg border p-4"
 								>
-									<div className="flex items-center space-x-2">
-										<RadioGroupItem value="da" id="yes" />
-										<Label htmlFor="yes">Da</Label>
-									</div>
-									<div className="flex items-center space-x-2">
-										<RadioGroupItem value="nu" id="no" />
-										<Label htmlFor="no">Nu</Label>
-									</div>
-									<div className="flex items-center space-x-2">
-										<RadioGroupItem value="nu_stiu" id="unknown" />
-										<Label htmlFor="unknown">Nu știu</Label>
-									</div>
-								</RadioGroup>
-							)}
+									<p className="font-medium">
+										{qIndex + 1}. {question.questionTextRo}
+									</p>
 
-							{currentQuestion.questionType === "single_choice" &&
-								currentQuestion.options && (
-									<RadioGroup
-										value={currentAnswer}
-										onValueChange={setCurrentAnswer}
-										className="space-y-2"
-									>
-										{currentQuestion.options.map((opt, i) => (
-											<div key={opt} className="flex items-center space-x-2">
-												<RadioGroupItem value={opt} id={`opt-${i}`} />
-												<Label htmlFor={`opt-${i}`}>{opt}</Label>
+									{question.questionType === "yes_no" && (
+										<RadioGroup
+											value={batchAnswers[question.questionId] || ""}
+											onValueChange={(value) =>
+												setBatchAnswers((prev) => ({
+													...prev,
+													[question.questionId]: value,
+												}))
+											}
+											className="flex gap-4"
+										>
+											<div className="flex items-center space-x-2">
+												<RadioGroupItem
+													value="da"
+													id={`${question.questionId}-yes`}
+												/>
+												<Label htmlFor={`${question.questionId}-yes`}>Da</Label>
 											</div>
-										))}
-									</RadioGroup>
-								)}
+											<div className="flex items-center space-x-2">
+												<RadioGroupItem
+													value="nu"
+													id={`${question.questionId}-no`}
+												/>
+												<Label htmlFor={`${question.questionId}-no`}>Nu</Label>
+											</div>
+											<div className="flex items-center space-x-2">
+												<RadioGroupItem
+													value="nu_stiu"
+													id={`${question.questionId}-unknown`}
+												/>
+												<Label htmlFor={`${question.questionId}-unknown`}>
+													Nu știu
+												</Label>
+											</div>
+										</RadioGroup>
+									)}
 
-							{currentQuestion.questionType === "scale" && (
-								<Input
-									type="number"
-									min={0}
-									max={10}
-									placeholder="0-10"
-									value={currentAnswer}
-									onChange={(e) => setCurrentAnswer(e.target.value)}
-								/>
-							)}
+									{question.questionType === "single_choice" &&
+										question.options && (
+											<RadioGroup
+												value={batchAnswers[question.questionId] || ""}
+												onValueChange={(value) =>
+													setBatchAnswers((prev) => ({
+														...prev,
+														[question.questionId]: value,
+													}))
+												}
+												className="space-y-2"
+											>
+												{question.options.map((opt: string, i: number) => (
+													<div
+														key={opt}
+														className="flex items-center space-x-2"
+													>
+														<RadioGroupItem
+															value={opt}
+															id={`${question.questionId}-opt-${i}`}
+														/>
+														<Label htmlFor={`${question.questionId}-opt-${i}`}>
+															{opt}
+														</Label>
+													</div>
+												))}
+											</RadioGroup>
+										)}
+
+									{question.questionType === "scale" && (
+										<Input
+											type="number"
+											min={0}
+											max={10}
+											placeholder="0-10"
+											value={batchAnswers[question.questionId] || ""}
+											onChange={(e) =>
+												setBatchAnswers((prev) => ({
+													...prev,
+													[question.questionId]: e.target.value,
+												}))
+											}
+										/>
+									)}
+								</div>
+							))}
+						</div>
+
+						<Separator />
+
+						{/* Additional notes from nurse */}
+						<div className="space-y-2">
+							<Label htmlFor="additional-notes" className="font-medium text-sm">
+								Note Suplimentare (opțional)
+							</Label>
+							<Textarea
+								id="additional-notes"
+								placeholder="Adăugați detalii suplimentare pe care pacientul le-a menționat în timpul întrebărilor (ex: 'Pacientul a menționat că a călătorit recent în străinătate' sau 'Are antecedente de diabet')"
+								value={additionalNotes}
+								onChange={(e) => setAdditionalNotes(e.target.value)}
+								rows={3}
+								className="resize-none"
+							/>
+							<p className="text-muted-foreground text-xs">
+								Aceste note vor fi procesate de AI pentru a extrage simptome
+								suplimentare și a îmbunătăți diagnosticul.
+							</p>
 						</div>
 
 						{/* Top candidate diseases preview */}
@@ -517,8 +606,9 @@ export function AISymptomChecker({
 								variant="outline"
 								onClick={() => {
 									setStep("initial");
-									setCurrentQuestion(null);
-									setCurrentAnswer("");
+									setCurrentBatch(null);
+									setBatchAnswers({});
+									setAdditionalNotes("");
 								}}
 							>
 								<ChevronLeft className="mr-2 h-4 w-4" />
@@ -526,7 +616,13 @@ export function AISymptomChecker({
 							</Button>
 							<Button
 								onClick={handleAnswerSubmit}
-								disabled={!currentAnswer || isProcessing}
+								disabled={
+									!currentBatch.questions.every(
+										(q) =>
+											batchAnswers[q.questionId] &&
+											batchAnswers[q.questionId].trim() !== "",
+									) || isProcessing
+								}
 								className="flex-1"
 							>
 								{isProcessing ? (

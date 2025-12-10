@@ -25,7 +25,7 @@ Output format (JSON only):
 }`,
 
 	/**
-	 * Generate the next diagnostic question based on candidate diseases
+	 * Generate batch of diagnostic questions based on candidate diseases
 	 */
 	NEXT_QUESTION: `You are a medical triage assistant helping nurses in Romania. You communicate in Romanian but think in medical English.
 
@@ -36,12 +36,14 @@ You receive:
 - Previously asked questions and answers
 
 Your task:
-1. Analyze which additional symptom/phenotype would best differentiate between candidate diseases
-2. Generate ONE clear, simple question in Romanian for the nurse to ask the patient
-3. The question should help confirm or rule out the most likely conditions
+1. Analyze which additional symptoms/phenotypes would best differentiate between candidate diseases
+2. Generate 3-5 RELATED questions in Romanian for the nurse to ask the patient
+3. Group questions that are medically related (e.g., all about pain characteristics, all about timing, all about associated symptoms)
+4. The questions should help confirm or rule out the most likely conditions
 
 Rules:
-- Ask about ONE specific symptom/phenotype at a time
+- Generate 3-5 related questions as a BATCH
+- Group questions by theme (e.g., "Pain characteristics", "Timing and duration", "Associated symptoms")
 - Questions should be simple yes/no or simple choice when possible
 - Be medically appropriate but use layman terms in Romanian
 - Focus on high-value differentiating symptoms
@@ -49,13 +51,19 @@ Rules:
 
 Output format (JSON only):
 {
-  "type": "question",
-  "questionId": "unique_id",
-  "questionTextRo": "question in Romanian",
-  "questionType": "yes_no" | "single_choice" | "scale",
-  "options": ["option1", "option2"] (only for single_choice),
-  "phenotypeEn": "the English phenotype this question is about",
-  "reasoning": "brief explanation of why this question helps (in English)"
+  "type": "questions",
+  "batchId": "unique_batch_id",
+  "theme": "Theme name in Romanian (e.g., Caracteristici ale durerii)",
+  "questions": [
+    {
+      "questionId": "unique_id_1",
+      "questionTextRo": "question in Romanian",
+      "questionType": "yes_no" | "single_choice" | "scale",
+      "options": ["option1", "option2"] (only for single_choice),
+      "phenotypeEn": "the English phenotype this question is about"
+    }
+  ],
+  "reasoning": "brief explanation of why these questions help differentiate (in English)"
 }`,
 
 	/**
@@ -64,22 +72,38 @@ Output format (JSON only):
 	FINAL_DIAGNOSIS: `You are a medical triage assistant providing diagnostic suggestions based ONLY on a medical knowledge graph.
 
 CRITICAL RULES:
-- You may ONLY suggest conditions that were returned by the knowledge graph query
-- Do NOT use your general medical knowledge - only the provided candidate diseases
-- If the knowledge graph returns no matches, say so explicitly
-- Rank conditions by how many of the patient's symptoms match the disease's phenotypes
+1. You may ONLY suggest conditions that were returned by the knowledge graph query
+2. Do NOT use your general medical knowledge - only the provided candidate diseases
+3. If the knowledge graph returns no matches, say so explicitly
+
+SCORING ALGORITHM (YOU MUST FOLLOW THIS EXACTLY):
+- Each candidate disease has a "Matched Phenotypes: X/Y" ratio from the KG
+- The match score shows: (number of patient symptoms found in disease phenotypes) / (total disease phenotypes)
+- RANK diseases primarily by their match scores - higher is better
+- If two diseases have similar scores, prefer the one with more absolute matched phenotypes
+
+GROUPING RULES:
+- GROUP diseases that are clearly variants of the same condition (e.g., "migraine type 1" and "migraine type 2" → just "migraine")
+- When grouping, use the HIGHEST match score from the group
+- List at most 4-5 DISTINCT conditions in the final output
+
+PROBABILITY CALCULATION:
+- Use the match score from KG as the base probability
+- Adjust based on: age/sex fit, symptom severity, denied symptoms that would have been expected
+- Top condition should have highest probability (usually 40-80%)
+- Other conditions should have progressively lower probabilities
+- DO NOT give all conditions the same probability like 20%
+
+OUTPUT REQUIREMENTS:
+- matchedSymptoms: List ALL patient symptoms that this condition explains (not just one!)
+- description: Explain in Romanian why this condition matches
+- recommendedActions: Practical next steps in Romanian
 
 You receive:
 - Patient info (age, sex)
-- All confirmed symptoms
+- All confirmed symptoms (this is the TOTAL symptom list)
 - Candidate diseases from the knowledge graph with match scores
 - Full Q&A history
-
-Your task:
-1. Rank the candidate diseases based on symptom matches
-2. Provide the top 3-5 most likely conditions with confidence scores
-3. Suggest specialist referral if needed
-4. All patient-facing text must be in Romanian
 
 Output format (JSON only):
 {
@@ -88,16 +112,16 @@ Output format (JSON only):
     {
       "conditionNameEn": "English disease name from KG",
       "conditionNameRo": "Romanian translation",
-      "conditionId": "disease ID from KG",
-      "probability": 0.0-1.0,
+      "conditionId": "disease ID from KG (use most specific)",
+      "probability": 0.0-1.0 (USE THE MATCH SCORE AS BASE),
       "severity": "low" | "medium" | "high" | "critical",
-      "matchedSymptoms": ["symptom1", "symptom2"],
-      "description": "Brief description in Romanian",
+      "matchedSymptoms": ["list ALL symptoms this disease explains"],
+      "description": "Brief description in Romanian explaining the condition",
       "recommendedActions": ["action1 in Romanian", "action2 in Romanian"],
       "specialistRecommendation": "which specialist if needed, in Romanian"
     }
   ],
-  "explanationRo": "Overall explanation for the nurse in Romanian",
+  "explanationRo": "Overall explanation for the nurse in Romanian, summarizing the differential diagnosis",
   "urgencyLevel": "routine" | "urgent" | "emergency",
   "confidenceNote": "Note about confidence level based on KG matches"
 }`,
@@ -202,28 +226,42 @@ export function buildDiagnosisPrompt(
 	}>,
 	allQA: Array<{ question: string; answer: string; phenotypeEn: string }>,
 ): string {
+	// Sort candidates by match score descending
+	const sortedCandidates = [...candidateDiseases].sort(
+		(a, b) => b.matchScore - a.matchScore,
+	);
+
 	return `## Patient Information
 - Age: ${patient.age} years
 - Sex: ${patient.sex}
 
-## Confirmed Symptoms (English)
-${confirmedSymptomsEn.map((s) => `- ${s}`).join("\n")}
+## TOTAL CONFIRMED SYMPTOMS (${confirmedSymptomsEn.length} symptoms)
+${confirmedSymptomsEn.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
-## Denied Symptoms (English)
+## Denied Symptoms
 ${deniedSymptomsEn.length > 0 ? deniedSymptomsEn.map((s) => `- ${s}`).join("\n") : "None explicitly denied."}
 
-## Candidate Diseases from Knowledge Graph (ONLY use these)
-${candidateDiseases
+## Candidate Diseases from Knowledge Graph (RANKED BY MATCH SCORE)
+${sortedCandidates
+	.slice(0, 10)
 	.map(
 		(d, i) =>
-			`${i + 1}. ${d.name} (ID: ${d.id})
-   - Matched Phenotypes: ${d.matchedPhenotypes}/${d.totalPhenotypes}
-   - Match Score: ${(d.matchScore * 100).toFixed(1)}%`,
+			`${i + 1}. ${d.name}
+   ID: ${d.id}
+   Match Score: ${(d.matchScore * 100).toFixed(1)}% (${d.matchedPhenotypes} patient symptoms match this disease's ${d.totalPhenotypes} known phenotypes)`,
 	)
-	.join("\n")}
+	.join("\n\n")}
 
 ## Complete Q&A History
-${allQA.map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`).join("\n\n")}
+${allQA.length > 0 ? allQA.map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`).join("\n\n") : "No additional questions were asked."}
+
+INSTRUCTIONS:
+1. Review the ${confirmedSymptomsEn.length} confirmed symptoms above
+2. For each candidate disease, identify which of those ${confirmedSymptomsEn.length} symptoms it can explain
+3. Use the match scores from KG as the PRIMARY factor for probability
+4. Group similar conditions and output 3-5 DISTINCT diagnoses
+5. The top diagnosis should have the highest match score probability
+6. In matchedSymptoms, list ALL the patient symptoms each condition explains (from the list above)
 
 Provide diagnosis suggestions based ONLY on the knowledge graph candidates above.`;
 }
