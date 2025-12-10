@@ -1,13 +1,12 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
-import { convex } from "@convex-dev/better-auth/plugins";
-import { crossDomain } from "@convex-dev/better-auth/plugins";
-import { components } from "./_generated/api";
-import { DataModel } from "./_generated/dataModel";
-import { query } from "./_generated/server";
+import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth";
 import { v } from "convex/values";
+import { components } from "./_generated/api";
+import type { DataModel } from "./_generated/dataModel";
+import { query } from "./_generated/server";
 
-const siteUrl = process.env.SITE_URL!;
+const siteUrl = process.env.SITE_URL ?? "http://localhost:3001";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -16,6 +15,7 @@ function createAuth(
 	{ optionsOnly }: { optionsOnly?: boolean } = { optionsOnly: false },
 ) {
 	return betterAuth({
+		baseURL: siteUrl,
 		logger: {
 			disabled: optionsOnly,
 		},
@@ -34,7 +34,5 @@ export { createAuth };
 export const getCurrentUser = query({
 	args: {},
 	returns: v.any(),
-	handler: async function (ctx, args) {
-		return authComponent.getAuthUser(ctx);
-	},
+	handler: async (ctx) => authComponent.getAuthUser(ctx),
 });

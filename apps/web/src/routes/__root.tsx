@@ -1,26 +1,26 @@
+import {
+	createRootRouteWithContext,
+	HeadContent,
+	Outlet,
+} from "@tanstack/react-router";
+import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import Header from "@/components/header";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import {
-	HeadContent,
-	Outlet,
-	createRootRouteWithContext,
-} from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import "../index.css";
 
-export interface RouterAppContext {}
+export type RouterAppContext = {};
 
 export const Route = createRootRouteWithContext<RouterAppContext>()({
 	component: RootComponent,
 	head: () => ({
 		meta: [
 			{
-				title: "infermedica-clone",
+				title: "medicheck-ai",
 			},
 			{
 				name: "description",
-				content: "infermedica-clone is a web application",
+				content: "medicheck-ai is a web application",
 			},
 		],
 		links: [
@@ -42,7 +42,7 @@ function RootComponent() {
 				disableTransitionOnChange
 				storageKey="vite-ui-theme"
 			>
-				<div className="grid grid-rows-[auto_1fr] h-svh">
+				<div className="isolate grid h-svh grid-rows-[auto_1fr]">
 					<Header />
 					<Outlet />
 				</div>

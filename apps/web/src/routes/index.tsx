@@ -1,50 +1,60 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
-import { api } from "@infermedica-clone/backend/convex/_generated/api";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
+import { Loader2, Stethoscope } from "lucide-react";
+import { useState } from "react";
+import SignInForm from "@/components/sign-in-form";
+import SignUpForm from "@/components/sign-up-form";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/")({
-	component: HomeComponent,
+	component: HomePage,
+	beforeLoad: async () => {
+		const session = await authClient.getSession();
+		if (session.data) {
+			throw redirect({
+				to: "/dashboard",
+			});
+		}
+	},
 });
 
-const TITLE_TEXT = `
- ██████╗ ███████╗████████╗████████╗███████╗██████╗
- ██╔══██╗██╔════╝╚══██╔══╝╚══██╔══╝██╔════╝██╔══██╗
- ██████╔╝█████╗     ██║      ██║   █████╗  ██████╔╝
- ██╔══██╗██╔══╝     ██║      ██║   ██╔══╝  ██╔══██╗
- ██████╔╝███████╗   ██║      ██║   ███████╗██║  ██║
- ╚═════╝ ╚══════╝   ╚═╝      ╚═╝   ╚══════╝╚═╝  ╚═╝
-
- ████████╗    ███████╗████████╗ █████╗  ██████╗██╗  ██╗
- ╚══██╔══╝    ██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
-    ██║       ███████╗   ██║   ███████║██║     █████╔╝
-    ██║       ╚════██║   ██║   ██╔══██║██║     ██╔═██╗
-    ██║       ███████║   ██║   ██║  ██║╚██████╗██║  ██╗
-    ╚═╝       ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
- `;
-
-function HomeComponent() {
-	const healthCheck = useQuery(api.healthCheck.get);
+function HomePage() {
+	const [showSignIn, setShowSignIn] = useState(false);
 
 	return (
-		<div className="container mx-auto max-w-3xl px-4 py-2">
-			<pre className="overflow-x-auto font-mono text-sm">{TITLE_TEXT}</pre>
-			<div className="grid gap-6">
-				<section className="rounded-lg border p-4">
-					<h2 className="mb-2 font-medium">API Status</h2>
-					<div className="flex items-center gap-2">
-						<div
-							className={`h-2 w-2 rounded-full ${healthCheck === "OK" ? "bg-green-500" : healthCheck === undefined ? "bg-orange-400" : "bg-red-500"}`}
-						/>
-						<span className="text-sm text-muted-foreground">
-							{healthCheck === undefined
-								? "Checking..."
-								: healthCheck === "OK"
-									? "Connected"
-									: "Error"}
-						</span>
+		<div className="flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center p-4">
+			<Authenticated>
+				<div className="text-center">
+					<Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+					<p className="mt-2 text-muted-foreground">Redirecting...</p>
+				</div>
+			</Authenticated>
+
+			<Unauthenticated>
+				<div className="mb-8 text-center">
+					<div className="mb-4 flex items-center justify-center gap-3">
+						<Stethoscope className="h-12 w-12 text-primary" />
+						<h1 className="font-bold text-4xl">MediCheck AI</h1>
 					</div>
-				</section>
-			</div>
+					<p className="max-w-md text-muted-foreground">
+						AI-powered symptom analysis and health insights. Get personalized
+						health recommendations based on your symptoms.
+					</p>
+				</div>
+
+				{showSignIn ? (
+					<SignInForm onSwitchToSignUp={() => setShowSignIn(false)} />
+				) : (
+					<SignUpForm onSwitchToSignIn={() => setShowSignIn(true)} />
+				)}
+			</Unauthenticated>
+
+			<AuthLoading>
+				<div className="text-center">
+					<Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+					<p className="mt-2 text-muted-foreground">Loading...</p>
+				</div>
+			</AuthLoading>
 		</div>
 	);
 }
