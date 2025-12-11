@@ -7,6 +7,7 @@ import {
 	useNavigate,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
 	Activity,
 	AlertTriangle,
@@ -39,6 +40,17 @@ import {
 	getStatusColor,
 	getStatusLabel,
 } from "@/lib/types";
+
+// Type for consultation from the API
+type ConsultationData = NonNullable<
+	FunctionReturnType<typeof api.consultations.getConsultation>
+>;
+type StructuredInput = NonNullable<ConsultationData["structuredInput"]>;
+type BodyPart = StructuredInput["bodyParts"][number];
+type DynamicSymptom = NonNullable<StructuredInput["selectedSymptoms"]>[number];
+type DiagnosisResult = NonNullable<
+	ConsultationData["diagnosisResults"]
+>[number];
 
 export const Route = createFileRoute("/consultation/$id")({
 	component: ConsultationDetailPage,
@@ -89,7 +101,7 @@ function ConsultationDetailPage() {
 
 	if (!consultation || !patient) {
 		return (
-			<div className="container flex min-h-[60vh] items-center justify-center">
+			<div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4">
 				<div className="text-center">
 					<div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
 					<p className="text-muted-foreground">Se încarcă...</p>
@@ -113,7 +125,7 @@ function ConsultationDetailPage() {
 	};
 
 	return (
-		<div className="container max-w-5xl py-6">
+		<div className="container mx-auto max-w-5xl px-4 py-6">
 			<div className="mb-6 flex items-center justify-between">
 				<Button asChild variant="ghost" size="sm">
 					<Link to="/dashboard">
@@ -166,7 +178,7 @@ function ConsultationDetailPage() {
 						</CardContent>
 					</Card>
 
-					{/* Symptoms */}
+					{/* Structured Symptom Input */}
 					<Card>
 						<CardHeader>
 							<CardTitle className="flex items-center gap-2 text-lg">
@@ -175,41 +187,66 @@ function ConsultationDetailPage() {
 							</CardTitle>
 						</CardHeader>
 						<CardContent>
-							{consultation.symptoms && consultation.symptoms.length > 0 ? (
-								<div className="space-y-3">
-									{consultation.symptoms.map((symptom, index) => (
-										<div
-											key={`${symptom.name}-${index}`}
-											className="flex items-start gap-3 rounded-lg border p-3"
-										>
-											<div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 font-medium text-primary text-xs">
-												{index + 1}
-											</div>
-											<div className="flex-1">
-												<p className="font-medium">{symptom.name}</p>
-												<div className="mt-1 flex items-center gap-4 text-muted-foreground text-xs">
-													{symptom.severity && (
-														<span>
-															Severitate:{" "}
-															{symptom.severity === "mild"
-																? "Ușoară"
-																: symptom.severity === "moderate"
-																	? "Moderată"
-																	: "Severă"}
-														</span>
-													)}
-													{symptom.duration && (
-														<span>Durată: {symptom.duration}</span>
-													)}
-												</div>
-												{symptom.notes && (
-													<p className="mt-1 text-muted-foreground text-sm">
-														{symptom.notes}
-													</p>
+							{consultation.structuredInput ? (
+								<div className="space-y-4">
+									{/* Body Parts */}
+									{consultation.structuredInput.bodyParts.length > 0 && (
+										<div>
+											<p className="mb-2 font-medium text-sm">Zone Afectate:</p>
+											<div className="flex flex-wrap gap-2">
+												{consultation.structuredInput.bodyParts.map(
+													(part: BodyPart) => (
+														<Badge key={part.id} variant="outline">
+															{part.nameRo || part.name}
+														</Badge>
+													),
 												)}
 											</div>
 										</div>
-									))}
+									)}
+									{/* Severity */}
+									<div>
+										<p className="mb-2 font-medium text-sm">Severitate:</p>
+										<div className="flex items-center gap-2">
+											<Progress
+												value={consultation.structuredInput.severityScore * 10}
+												className="h-2 flex-1"
+											/>
+											<span className="font-medium text-sm">
+												{consultation.structuredInput.severityScore}/10
+											</span>
+										</div>
+									</div>
+									{/* Selected Symptoms */}
+									{consultation.structuredInput.selectedSymptoms &&
+										consultation.structuredInput.selectedSymptoms.length >
+											0 && (
+											<div>
+												<p className="mb-2 font-medium text-sm">
+													Simptome Selectate:
+												</p>
+												<div className="flex flex-wrap gap-2">
+													{consultation.structuredInput.selectedSymptoms.map(
+														(symptom: DynamicSymptom) => (
+															<Badge key={symptom.id} variant="secondary">
+																{symptom.name}
+															</Badge>
+														),
+													)}
+												</div>
+											</div>
+										)}
+									{/* Additional Notes */}
+									{consultation.structuredInput.additionalNotes && (
+										<div>
+											<p className="mb-2 font-medium text-sm">
+												Note Adiționale:
+											</p>
+											<p className="text-muted-foreground text-sm">
+												{consultation.structuredInput.additionalNotes}
+											</p>
+										</div>
+									)}
 								</div>
 							) : (
 								<p className="text-muted-foreground">
@@ -304,54 +341,58 @@ function ConsultationDetailPage() {
 								</CardHeader>
 								<CardContent className="space-y-4">
 									<div className="space-y-3">
-										{consultation.diagnosisResults.map((result, index) => (
-											<div
-												key={`${result.conditionName}-${index}`}
-												className="rounded-lg border p-4"
-											>
-												<div className="mb-2 flex items-center justify-between">
-													<h4 className="font-medium">
-														{result.conditionName}
-													</h4>
-													<Badge className={severityColors[result.severity]}>
-														{severityLabels[result.severity]}
-													</Badge>
-												</div>
-												<div className="mb-2 flex items-center gap-2">
-													<Progress
-														value={result.probability}
-														className="h-2 flex-1"
-													/>
-													<span className="font-medium text-sm">
-														{result.probability}%
-													</span>
-												</div>
-												{result.description && (
-													<p className="text-muted-foreground text-sm">
-														{result.description}
-													</p>
-												)}
-												{result.recommendedActions &&
-													result.recommendedActions.length > 0 && (
-														<div className="mt-3">
-															<p className="mb-1 font-medium text-sm">
-																Acțiuni recomandate:
-															</p>
-															<ul className="list-inside list-disc text-muted-foreground text-sm">
-																{result.recommendedActions.map((action, i) => (
-																	<li key={`action-${i}`}>{action}</li>
-																))}
-															</ul>
-														</div>
+										{consultation.diagnosisResults.map(
+											(result: DiagnosisResult, index: number) => (
+												<div
+													key={`${result.conditionName}-${index}`}
+													className="rounded-lg border p-4"
+												>
+													<div className="mb-2 flex items-center justify-between">
+														<h4 className="font-medium">
+															{result.conditionName}
+														</h4>
+														<Badge className={severityColors[result.severity]}>
+															{severityLabels[result.severity]}
+														</Badge>
+													</div>
+													<div className="mb-2 flex items-center gap-2">
+														<Progress
+															value={result.probability}
+															className="h-2 flex-1"
+														/>
+														<span className="font-medium text-sm">
+															{result.probability}%
+														</span>
+													</div>
+													{result.description && (
+														<p className="text-muted-foreground text-sm">
+															{result.description}
+														</p>
 													)}
-												{result.specialistRecommendation && (
-													<p className="mt-2 text-primary text-sm">
-														<strong>Specialist recomandat:</strong>{" "}
-														{result.specialistRecommendation}
-													</p>
-												)}
-											</div>
-										))}
+													{result.recommendedActions &&
+														result.recommendedActions.length > 0 && (
+															<div className="mt-3">
+																<p className="mb-1 font-medium text-sm">
+																	Acțiuni recomandate:
+																</p>
+																<ul className="list-inside list-disc text-muted-foreground text-sm">
+																	{result.recommendedActions.map(
+																		(action: string) => (
+																			<li key={action}>{action}</li>
+																		),
+																	)}
+																</ul>
+															</div>
+														)}
+													{result.specialistRecommendation && (
+														<p className="mt-2 text-primary text-sm">
+															<strong>Specialist recomandat:</strong>{" "}
+															{result.specialistRecommendation}
+														</p>
+													)}
+												</div>
+											),
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -455,9 +496,9 @@ function ConsultationDetailPage() {
 											Alergii
 										</div>
 										<div className="flex flex-wrap gap-1">
-											{patient.knownAllergies.map((allergy, index) => (
+											{patient.knownAllergies.map((allergy: string) => (
 												<Badge
-													key={`allergy-${index}`}
+													key={allergy}
 													variant="outline"
 													className="border-orange-200 bg-orange-50 text-orange-700"
 												>
@@ -478,8 +519,8 @@ function ConsultationDetailPage() {
 												Condiții Cronice
 											</p>
 											<div className="flex flex-wrap gap-1">
-												{patient.chronicConditions.map((condition, index) => (
-													<Badge key={`chronic-${index}`} variant="secondary">
+												{patient.chronicConditions.map((condition: string) => (
+													<Badge key={condition} variant="secondary">
 														{condition}
 													</Badge>
 												))}

@@ -6,6 +6,7 @@ import {
 	useNavigate,
 } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
 	Activity,
 	ArrowRight,
@@ -35,6 +36,11 @@ import {
 	getStatusColor,
 	getStatusLabel,
 } from "@/lib/types";
+
+// Extract types from Convex API
+type ConsultationWithPatient = NonNullable<
+	FunctionReturnType<typeof api.consultations.getActiveConsultations>
+>[number];
 
 export const Route = createFileRoute("/dashboard")({
 	component: DashboardPage,
@@ -73,7 +79,7 @@ function DashboardPage() {
 	};
 
 	return (
-		<div className="container max-w-7xl py-6">
+		<div className="container mx-auto max-w-7xl px-4 py-6">
 			{/* Header */}
 			<div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
@@ -194,38 +200,40 @@ function DashboardPage() {
 					</CardHeader>
 					<CardContent>
 						<div className="space-y-3">
-							{activeConsultations.map((consultation) => (
-								<Link
-									key={consultation._id}
-									to="/consultation/$id"
-									params={{ id: consultation._id }}
-									className="block"
-								>
-									<div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 p-4 transition-colors hover:bg-primary/10">
-										<div className="flex items-center gap-4">
-											<div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
-												{consultation.patient?.firstName[0]}
-												{consultation.patient?.lastName[0]}
+							{activeConsultations.map(
+								(consultation: ConsultationWithPatient) => (
+									<Link
+										key={consultation._id}
+										to="/consultation/$id"
+										params={{ id: consultation._id }}
+										className="block"
+									>
+										<div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 p-4 transition-colors hover:bg-primary/10">
+											<div className="flex items-center gap-4">
+												<div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
+													{consultation.patient?.firstName[0]}
+													{consultation.patient?.lastName[0]}
+												</div>
+												<div>
+													<p className="font-medium">
+														{consultation.patient?.lastName}{" "}
+														{consultation.patient?.firstName}
+													</p>
+													<p className="text-muted-foreground text-sm">
+														{consultation.chiefComplaint}
+													</p>
+												</div>
 											</div>
-											<div>
-												<p className="font-medium">
-													{consultation.patient?.lastName}{" "}
-													{consultation.patient?.firstName}
-												</p>
-												<p className="text-muted-foreground text-sm">
-													{consultation.chiefComplaint}
-												</p>
+											<div className="flex items-center gap-2">
+												<Badge className={getStatusColor(consultation.status)}>
+													{getStatusLabel(consultation.status)}
+												</Badge>
+												<ArrowRight className="h-4 w-4" />
 											</div>
 										</div>
-										<div className="flex items-center gap-2">
-											<Badge className={getStatusColor(consultation.status)}>
-												{getStatusLabel(consultation.status)}
-											</Badge>
-											<ArrowRight className="h-4 w-4" />
-										</div>
-									</div>
-								</Link>
-							))}
+									</Link>
+								),
+							)}
 						</div>
 					</CardContent>
 				</Card>
@@ -246,32 +254,34 @@ function DashboardPage() {
 							</div>
 						) : recentConsultations.length > 0 ? (
 							<div className="space-y-3">
-								{recentConsultations.map((consultation) => (
-									<Link
-										key={consultation._id}
-										to="/consultation/$id"
-										params={{ id: consultation._id }}
-										className="block"
-									>
-										<div className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50">
-											<div>
-												<p className="font-medium">
-													{consultation.patient?.lastName}{" "}
-													{consultation.patient?.firstName}
-												</p>
-												<p className="text-muted-foreground text-sm">
-													{consultation.chiefComplaint}
-												</p>
-												<p className="text-muted-foreground text-xs">
-													{formatDateTime(consultation.startedAt)}
-												</p>
+								{recentConsultations.map(
+									(consultation: ConsultationWithPatient) => (
+										<Link
+											key={consultation._id}
+											to="/consultation/$id"
+											params={{ id: consultation._id }}
+											className="block"
+										>
+											<div className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50">
+												<div>
+													<p className="font-medium">
+														{consultation.patient?.lastName}{" "}
+														{consultation.patient?.firstName}
+													</p>
+													<p className="text-muted-foreground text-sm">
+														{consultation.chiefComplaint}
+													</p>
+													<p className="text-muted-foreground text-xs">
+														{formatDateTime(consultation.startedAt)}
+													</p>
+												</div>
+												<Badge className={getStatusColor(consultation.status)}>
+													{getStatusLabel(consultation.status)}
+												</Badge>
 											</div>
-											<Badge className={getStatusColor(consultation.status)}>
-												{getStatusLabel(consultation.status)}
-											</Badge>
-										</div>
-									</Link>
-								))}
+										</Link>
+									),
+								)}
 							</div>
 						) : (
 							<p className="py-8 text-center text-muted-foreground">

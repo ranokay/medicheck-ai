@@ -16,48 +16,21 @@ export type ConsultationStatus = Consultation["status"];
 export type MedicalStaff = Doc<"medicalStaff">;
 export type StaffRole = MedicalStaff["role"];
 
-// Symptom entry
-export interface SymptomEntry {
-	name: string;
-	severity?: "mild" | "moderate" | "severe";
-	duration?: string;
-	notes?: string;
-}
-
-// Question types
-export type QuestionType =
-	| "single_choice"
-	| "multiple_choice"
-	| "yes_no"
-	| "scale"
-	| "text";
-
-export interface CurrentQuestion {
-	questionId: string;
-	question: string;
-	questionType: QuestionType;
-	options?: string[];
-	scaleMin?: number;
-	scaleMax?: number;
-}
-
-export interface QuestionAnswer {
-	questionId: string;
-	question: string;
-	questionType: QuestionType;
-	answer: unknown;
-	answeredAt: number;
-}
-
 // Diagnosis result
 export interface DiagnosisResult {
 	conditionName: string;
 	conditionId?: string;
+	mondoId?: string;
 	probability: number;
 	severity: "low" | "medium" | "high" | "critical";
 	description?: string;
 	recommendedActions?: string[];
 	specialistRecommendation?: string;
+	matchedPhenotypes?: Array<{
+		id: string;
+		name: string;
+		frequency?: string;
+	}>;
 }
 
 // Vital signs
@@ -70,11 +43,6 @@ export interface VitalSigns {
 	oxygenSaturation?: number;
 	weight?: number;
 	height?: number;
-}
-
-// Consultation with patient info
-export interface ConsultationWithPatient extends Consultation {
-	patient: Patient | null;
 }
 
 // Helper function to calculate age from date of birth

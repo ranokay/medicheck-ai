@@ -6,12 +6,11 @@ import {
 	redirect,
 	useNavigate,
 } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
-import { ArrowLeft, Brain, ClipboardList, UserPlus } from "lucide-react";
-import { useState } from "react";
-import { AISymptomChecker } from "@/components/ai-symptom-checker";
+import { useMutation, useQuery } from "convex/react";
+import { ArrowLeft, UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
 import { PatientSearch } from "@/components/patient-search";
-import { SymptomChecker } from "@/components/symptom-checker";
+import { ProductionSymptomChecker } from "@/components/production-symptom-checker";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -20,9 +19,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
-import { calculateAge } from "@/lib/types";
 
 type ConsultationStep = "select-patient" | "symptoms";
 
@@ -42,8 +39,8 @@ export const Route = createFileRoute("/consultation/new")({
 });
 
 function NewConsultationPage() {
-	const navigate = useNavigate();
 	const { patientId: initialPatientId } = Route.useSearch();
+	const navigate = useNavigate();
 
 	const [step, setStep] = useState<ConsultationStep>(
 		initialPatientId ? "symptoms" : "select-patient",
@@ -51,26 +48,53 @@ function NewConsultationPage() {
 	const [selectedPatientId, setSelectedPatientId] = useState<
 		Id<"patients"> | undefined
 	>(initialPatientId as Id<"patients"> | undefined);
+	const [consultationId, setConsultationId] = useState<
+		Id<"consultations"> | undefined
+	>();
+
+	const startConsultation = useMutation(api.consultations.startConsultation);
 
 	const selectedPatient = useQuery(
 		api.patients.getPatient,
 		selectedPatientId ? { id: selectedPatientId } : "skip",
 	);
 
-	const handlePatientSelect = (patientId: Id<"patients">) => {
-		setSelectedPatientId(patientId);
-		setStep("symptoms");
-	};
+	// Create consultation when navigating with an initial patient ID
+	useEffect(() => {
+		if (initialPatientId && !consultationId) {
+			startConsultation({
+				patientId: initialPatientId as Id<"patients">,
+				chiefComplaint: "Consultație nouă - simptome în curs de evaluare",
+			})
+				.then((newConsultationId) => {
+					setConsultationId(newConsultationId);
+				})
+				.catch((error) => {
+					console.error("Failed to start consultation:", error);
+				});
+		}
+	}, [initialPatientId, consultationId, startConsultation]);
 
-	const handleConsultationComplete = (consultationId: Id<"consultations">) => {
-		navigate({
-			to: "/consultation/$id",
-			params: { id: consultationId },
-		});
+	const handlePatientSelect = async (patientId: Id<"patients">) => {
+		setSelectedPatientId(patientId);
+
+		// Create a new consultation for this patient
+		try {
+			const newConsultationId = await startConsultation({
+				patientId,
+				chiefComplaint: "Consultație nouă - simptome în curs de evaluare",
+			});
+			setConsultationId(newConsultationId);
+			setStep("symptoms");
+		} catch (error) {
+			console.error("Failed to start consultation:", error);
+			// Still proceed but without consultation ID
+			setStep("symptoms");
+		}
 	};
 
 	return (
-		<div className="container max-w-4xl py-6">
+		<div className="container mx-auto max-w-4xl px-4 py-6">
 			<div className="mb-6">
 				<Button asChild variant="ghost" size="sm">
 					<Link to="/dashboard">
@@ -140,6 +164,7 @@ function NewConsultationPage() {
 										size="sm"
 										onClick={() => {
 											setSelectedPatientId(undefined);
+											setConsultationId(undefined);
 											setStep("select-patient");
 										}}
 									>
@@ -150,35 +175,26 @@ function NewConsultationPage() {
 						</Card>
 					)}
 
-					{/* Tabs for AI vs Manual mode */}
-					<Tabs defaultValue="ai" className="w-full">
-						<TabsList className="grid w-full grid-cols-2">
-							<TabsTrigger value="ai" className="flex items-center gap-2">
-								<Brain className="h-4 w-4" />
-								Diagnostic AI (Monarch KG)
-							</TabsTrigger>
-							<TabsTrigger value="manual" className="flex items-center gap-2">
-								<ClipboardList className="h-4 w-4" />
-								Manual
-							</TabsTrigger>
-						</TabsList>
-						<TabsContent value="ai" className="mt-4">
-							{selectedPatient && (
-								<AISymptomChecker
-									patientId={selectedPatientId}
-									patientAge={calculateAge(selectedPatient.dateOfBirth)}
-									patientSex={selectedPatient.sex}
-									onComplete={handleConsultationComplete}
-								/>
-							)}
-						</TabsContent>
-						<TabsContent value="manual" className="mt-4">
-							<SymptomChecker
-								patientId={selectedPatientId}
-								onComplete={handleConsultationComplete}
-							/>
-						</TabsContent>
-					</Tabs>
+					{/* Symptom Checker */}
+					{selectedPatient && (
+						<ProductionSymptomChecker
+							patientId={selectedPatientId}
+							consultationId={consultationId}
+							language="ro"
+							onComplete={(results) => {
+								console.log("Diagnosis results:", results);
+								// Navigate to the consultation detail page
+								if (consultationId) {
+									navigate({
+										to: "/consultation/$id",
+										params: { id: consultationId },
+									});
+								} else {
+									navigate({ to: "/dashboard" });
+								}
+							}}
+						/>
+					)}
 				</div>
 			)}
 		</div>

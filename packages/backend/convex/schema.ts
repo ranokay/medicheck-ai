@@ -1,36 +1,77 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// Symptom entry with optional details
-const symptomEntry = v.object({
+// ============ Body Part & Symptom Ontology Types ============
+
+// Body part with UBERON ontology mapping
+const bodyPart = v.object({
+	id: v.string(), // UBERON ID
 	name: v.string(),
-	severity: v.optional(
-		v.union(v.literal("mild"), v.literal("moderate"), v.literal("severe")),
-	),
-	duration: v.optional(v.string()), // e.g., "2 days", "1 week"
-	notes: v.optional(v.string()),
+	nameRo: v.optional(v.string()),
+	system: v.optional(v.string()), // Body system (cardiovascular, respiratory, etc.)
 });
 
-// Question-answer pair for the diagnostic flow
-const questionAnswer = v.object({
-	questionId: v.string(),
-	question: v.string(),
-	questionType: v.union(
-		v.literal("single_choice"),
-		v.literal("multiple_choice"),
-		v.literal("yes_no"),
-		v.literal("scale"),
-		v.literal("text"),
-	),
-	answer: v.any(), // Can be string, array, number depending on questionType
-	answeredAt: v.number(),
+// Symptom factor from HPO-mapped factors
+const symptomFactor = v.object({
+	id: v.string(),
+	category: v.string(), // pain_quality, triggers, relief, accompanying, etc.
+	name: v.string(),
+	nameRo: v.optional(v.string()),
+	hpoId: v.optional(v.string()), // Human Phenotype Ontology ID
 });
 
-// Diagnosis result with confidence score
+// Dynamic symptom from Monarch KG
+const dynamicSymptom = v.object({
+	id: v.string(), // HPO ID
+	name: v.string(),
+	description: v.optional(v.string()),
+});
+
+// ============ Structured Symptom Input ============
+
+// Complete structured symptom input from the symptom checker
+const structuredSymptomInput = v.object({
+	// Selected body parts with UBERON IDs
+	bodyParts: v.array(bodyPart),
+	// Selected symptom factors organized by category
+	factors: v.object({
+		painQuality: v.optional(v.array(symptomFactor)),
+		triggers: v.optional(v.array(symptomFactor)),
+		relief: v.optional(v.array(symptomFactor)),
+		accompanying: v.optional(v.array(symptomFactor)),
+		onset: v.optional(v.array(symptomFactor)),
+		duration: v.optional(v.array(symptomFactor)),
+		frequency: v.optional(v.array(symptomFactor)),
+		severity: v.optional(v.array(symptomFactor)),
+		locationModifier: v.optional(v.array(symptomFactor)),
+	}),
+	// Symptom-specific factors (Mayo Clinic style)
+	symptomSpecificFactors: v.optional(
+		v.record(v.string(), v.array(v.string())), // categoryId -> factorIds
+	),
+	// Dynamic symptoms from Monarch KG
+	selectedSymptoms: v.optional(v.array(dynamicSymptom)),
+	// Overall severity score (1-10)
+	severityScore: v.number(),
+	// Free text notes
+	additionalNotes: v.optional(v.string()),
+	// Patient demographic info at time of check
+	patientInfo: v.object({
+		ageCategory: v.string(),
+		gender: v.string(),
+		height: v.optional(v.number()),
+		weight: v.optional(v.number()),
+	}),
+});
+
+// ============ Diagnosis Result ============
+
+// Diagnosis result with confidence score and ontology mapping
 const diagnosisResult = v.object({
 	conditionName: v.string(),
 	conditionId: v.optional(v.string()),
-	probability: v.number(), // 0-100 percentage
+	mondoId: v.optional(v.string()), // MONDO disease ontology ID
+	probability: v.number(), // 0-1 score
 	severity: v.union(
 		v.literal("low"),
 		v.literal("medium"),
@@ -40,7 +81,32 @@ const diagnosisResult = v.object({
 	description: v.optional(v.string()),
 	recommendedActions: v.optional(v.array(v.string())),
 	specialistRecommendation: v.optional(v.string()),
+	// Supporting evidence from knowledge graph
+	matchedPhenotypes: v.optional(
+		v.array(
+			v.object({
+				id: v.string(), // HPO ID
+				name: v.string(),
+				frequency: v.optional(v.string()),
+			}),
+		),
+	),
 });
+
+// ============ Vital Signs ============
+
+const vitalSigns = v.object({
+	bloodPressureSystolic: v.optional(v.number()),
+	bloodPressureDiastolic: v.optional(v.number()),
+	heartRate: v.optional(v.number()),
+	temperature: v.optional(v.number()), // Celsius
+	respiratoryRate: v.optional(v.number()),
+	oxygenSaturation: v.optional(v.number()), // Percentage
+	weight: v.optional(v.number()), // kg
+	height: v.optional(v.number()), // cm
+});
+
+// ============ Schema Definition ============
 
 export default defineSchema({
 	// Medical staff profiles (nurses, doctors, medical assistants)
@@ -116,45 +182,26 @@ export default defineSchema({
 		),
 		// Chief complaint - main reason for visit
 		chiefComplaint: v.string(),
-		// Collected symptoms
-		symptoms: v.array(symptomEntry),
-		// Q&A flow from the diagnostic engine
-		questionsAnswered: v.array(questionAnswer),
-		// Current question being asked (for in-progress sessions)
-		currentQuestion: v.optional(
-			v.object({
-				questionId: v.string(),
-				question: v.string(),
-				questionType: v.union(
-					v.literal("single_choice"),
-					v.literal("multiple_choice"),
-					v.literal("yes_no"),
-					v.literal("scale"),
-					v.literal("text"),
-				),
-				options: v.optional(v.array(v.string())),
-				scaleMin: v.optional(v.number()),
-				scaleMax: v.optional(v.number()),
-			}),
-		),
-		// Final diagnosis results
+		// Structured symptom input from symptom checker
+		structuredInput: v.optional(structuredSymptomInput),
+		// Vital signs taken during consultation
+		vitalSigns: v.optional(vitalSigns),
+		// Final diagnosis results from KG
 		diagnosisResults: v.optional(v.array(diagnosisResult)),
-		// Which doctor the patient was referred to (if any)
+		// Urgency level from diagnosis
+		urgencyLevel: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("medium"),
+				v.literal("high"),
+				v.literal("emergency"),
+			),
+		),
+		// Suggested additional tests
+		suggestedTests: v.optional(v.array(v.string())),
+		// Referral info
 		referredToDoctor: v.optional(v.string()),
 		referralNotes: v.optional(v.string()),
-		// Vital signs taken during consultation
-		vitalSigns: v.optional(
-			v.object({
-				bloodPressureSystolic: v.optional(v.number()),
-				bloodPressureDiastolic: v.optional(v.number()),
-				heartRate: v.optional(v.number()),
-				temperature: v.optional(v.number()), // Celsius
-				respiratoryRate: v.optional(v.number()),
-				oxygenSaturation: v.optional(v.number()), // Percentage
-				weight: v.optional(v.number()), // kg
-				height: v.optional(v.number()), // cm
-			}),
-		),
 		// Timestamps
 		startedAt: v.number(),
 		completedAt: v.optional(v.number()),

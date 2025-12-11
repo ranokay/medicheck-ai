@@ -4,13 +4,16 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
 	Activity,
+	AlertCircle,
 	Calendar,
 	Clock,
 	FileText,
 	Heart,
 	Loader2,
+	Pencil,
 	Phone,
 	Pill,
+	Play,
 	Plus,
 	User,
 } from "lucide-react";
@@ -20,6 +23,7 @@ import {
 	getStatusColor,
 	getStatusLabel,
 } from "@/lib/types";
+import { EditPatientDialog } from "./edit-patient-dialog";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -108,12 +112,23 @@ export function PatientProfile({
 								</code>
 							</div>
 
-							{onStartConsultation && (
-								<Button onClick={onStartConsultation} className="gap-2">
-									<Plus className="h-4 w-4" />
-									Consultație Nouă
-								</Button>
-							)}
+							<div className="flex flex-wrap items-center gap-2">
+								{onStartConsultation && (
+									<Button onClick={onStartConsultation} className="gap-2">
+										<Plus className="h-4 w-4" />
+										Consultație Nouă
+									</Button>
+								)}
+								<EditPatientDialog
+									patientId={patientId}
+									trigger={
+										<Button variant="outline" className="gap-2">
+											<Pencil className="h-4 w-4" />
+											Editează Datele
+										</Button>
+									}
+								/>
+							</div>
 						</div>
 					</div>
 				</CardContent>
@@ -246,6 +261,65 @@ export function PatientProfile({
 					</CardContent>
 				</Card>
 			)}
+
+			{/* Unfinished Consultations - Show prominently if any exist */}
+			{consultations &&
+				consultations.filter(
+					(c) =>
+						c.status === "in_progress" || c.status === "awaiting_diagnosis",
+				).length > 0 && (
+					<Card className="border-amber-500/50 bg-amber-500/5">
+						<CardHeader>
+							<CardTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
+								<AlertCircle className="h-5 w-5" />
+								Consultații Nefinalizate
+							</CardTitle>
+							<CardDescription>
+								Aceste consultații sunt încă în desfășurare și pot fi continuate
+							</CardDescription>
+						</CardHeader>
+						<CardContent>
+							<div className="space-y-3">
+								{consultations
+									.filter(
+										(c) =>
+											c.status === "in_progress" ||
+											c.status === "awaiting_diagnosis",
+									)
+									.map((consultation) => (
+										<Link
+											key={consultation._id}
+											to="/consultation/$id"
+											params={{ id: consultation._id }}
+											className="block"
+										>
+											<div className="flex items-center justify-between rounded-lg border border-amber-500/30 bg-background p-4 transition-colors hover:bg-amber-500/10">
+												<div className="flex-1">
+													<p className="font-medium">
+														{consultation.chiefComplaint}
+													</p>
+													<p className="text-muted-foreground text-sm">
+														{formatDateTime(consultation.startedAt)}
+													</p>
+												</div>
+												<div className="flex items-center gap-3">
+													<Badge
+														className={getStatusColor(consultation.status)}
+													>
+														{getStatusLabel(consultation.status)}
+													</Badge>
+													<Button size="sm" variant="outline" className="gap-2">
+														<Play className="h-3 w-3" />
+														Continuă
+													</Button>
+												</div>
+											</div>
+										</Link>
+									))}
+							</div>
+						</CardContent>
+					</Card>
+				)}
 
 			{/* Consultation history */}
 			<Card>

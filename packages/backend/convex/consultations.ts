@@ -12,19 +12,58 @@ async function getAuthUserId(ctx: {
 	return identity.subject;
 }
 
-// Validators matching schema
-const symptomEntry = v.object({
+// ============ Validators matching schema ============
+
+const bodyPart = v.object({
+	id: v.string(),
 	name: v.string(),
-	severity: v.optional(
-		v.union(v.literal("mild"), v.literal("moderate"), v.literal("severe")),
-	),
-	duration: v.optional(v.string()),
-	notes: v.optional(v.string()),
+	nameRo: v.optional(v.string()),
+	system: v.optional(v.string()),
+});
+
+const symptomFactor = v.object({
+	id: v.string(),
+	category: v.string(),
+	name: v.string(),
+	nameRo: v.optional(v.string()),
+	hpoId: v.optional(v.string()),
+});
+
+const dynamicSymptom = v.object({
+	id: v.string(),
+	name: v.string(),
+	description: v.optional(v.string()),
+});
+
+const structuredSymptomInput = v.object({
+	bodyParts: v.array(bodyPart),
+	factors: v.object({
+		painQuality: v.optional(v.array(symptomFactor)),
+		triggers: v.optional(v.array(symptomFactor)),
+		relief: v.optional(v.array(symptomFactor)),
+		accompanying: v.optional(v.array(symptomFactor)),
+		onset: v.optional(v.array(symptomFactor)),
+		duration: v.optional(v.array(symptomFactor)),
+		frequency: v.optional(v.array(symptomFactor)),
+		severity: v.optional(v.array(symptomFactor)),
+		locationModifier: v.optional(v.array(symptomFactor)),
+	}),
+	symptomSpecificFactors: v.optional(v.record(v.string(), v.array(v.string()))),
+	selectedSymptoms: v.optional(v.array(dynamicSymptom)),
+	severityScore: v.number(),
+	additionalNotes: v.optional(v.string()),
+	patientInfo: v.object({
+		ageCategory: v.string(),
+		gender: v.string(),
+		height: v.optional(v.number()),
+		weight: v.optional(v.number()),
+	}),
 });
 
 const diagnosisResult = v.object({
 	conditionName: v.string(),
 	conditionId: v.optional(v.string()),
+	mondoId: v.optional(v.string()),
 	probability: v.number(),
 	severity: v.union(
 		v.literal("low"),
@@ -35,6 +74,15 @@ const diagnosisResult = v.object({
 	description: v.optional(v.string()),
 	recommendedActions: v.optional(v.array(v.string())),
 	specialistRecommendation: v.optional(v.string()),
+	matchedPhenotypes: v.optional(
+		v.array(
+			v.object({
+				id: v.string(),
+				name: v.string(),
+				frequency: v.optional(v.string()),
+			}),
+		),
+	),
 });
 
 const vitalSigns = v.object({
@@ -48,28 +96,12 @@ const vitalSigns = v.object({
 	height: v.optional(v.number()),
 });
 
-const currentQuestion = v.object({
-	questionId: v.string(),
-	question: v.string(),
-	questionType: v.union(
-		v.literal("single_choice"),
-		v.literal("multiple_choice"),
-		v.literal("yes_no"),
-		v.literal("scale"),
-		v.literal("text"),
-	),
-	options: v.optional(v.array(v.string())),
-	scaleMin: v.optional(v.number()),
-	scaleMax: v.optional(v.number()),
-});
-
 // ============ Consultation Management ============
 
 export const startConsultation = mutation({
 	args: {
 		patientId: v.id("patients"),
 		chiefComplaint: v.string(),
-		symptoms: v.optional(v.array(symptomEntry)),
 		vitalSigns: v.optional(vitalSigns),
 	},
 	handler: async (ctx, args) => {
@@ -89,8 +121,6 @@ export const startConsultation = mutation({
 			staffId: userId,
 			status: "in_progress",
 			chiefComplaint: args.chiefComplaint,
-			symptoms: args.symptoms ?? [],
-			questionsAnswered: [],
 			vitalSigns: args.vitalSigns,
 			startedAt: now,
 			updatedAt: now,
@@ -121,38 +151,10 @@ export const updateVitalSigns = mutation({
 	},
 });
 
-export const updateConsultation = mutation({
-	args: {
-		id: v.id("consultations"),
-		symptoms: v.optional(v.array(symptomEntry)),
-		vitalSigns: v.optional(vitalSigns),
-		chiefComplaint: v.optional(v.string()),
-	},
-	handler: async (ctx, args) => {
-		const userId = await getAuthUserId(ctx);
-		if (!userId) {
-			throw new Error("Unauthenticated");
-		}
-
-		const { id, ...updates } = args;
-		const consultation = await ctx.db.get(id);
-		if (!consultation) {
-			throw new Error("Consultation not found");
-		}
-
-		await ctx.db.patch(id, {
-			...updates,
-			updatedAt: Date.now(),
-		});
-
-		return id;
-	},
-});
-
-export const addSymptom = mutation({
+export const updateStructuredInput = mutation({
 	args: {
 		consultationId: v.id("consultations"),
-		symptom: symptomEntry,
+		structuredInput: structuredSymptomInput,
 	},
 	handler: async (ctx, args) => {
 		const userId = await getAuthUserId(ctx);
@@ -166,16 +168,24 @@ export const addSymptom = mutation({
 		}
 
 		await ctx.db.patch(args.consultationId, {
-			symptoms: [...consultation.symptoms, args.symptom],
+			structuredInput: args.structuredInput,
+			status: "awaiting_diagnosis",
 			updatedAt: Date.now(),
 		});
 	},
 });
 
-export const removeSymptom = mutation({
+export const saveDiagnosisResults = mutation({
 	args: {
 		consultationId: v.id("consultations"),
-		symptomName: v.string(),
+		diagnosisResults: v.array(diagnosisResult),
+		urgencyLevel: v.union(
+			v.literal("low"),
+			v.literal("medium"),
+			v.literal("high"),
+			v.literal("emergency"),
+		),
+		suggestedTests: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const userId = await getAuthUserId(ctx);
@@ -189,70 +199,18 @@ export const removeSymptom = mutation({
 		}
 
 		await ctx.db.patch(args.consultationId, {
-			symptoms: consultation.symptoms.filter(
-				(s) => s.name !== args.symptomName,
-			),
+			diagnosisResults: args.diagnosisResults,
+			urgencyLevel: args.urgencyLevel,
+			suggestedTests: args.suggestedTests,
 			updatedAt: Date.now(),
 		});
-	},
-});
-
-export const setCurrentQuestion = mutation({
-	args: {
-		consultationId: v.id("consultations"),
-		question: currentQuestion,
-	},
-	handler: async (ctx, args) => {
-		const userId = await getAuthUserId(ctx);
-		if (!userId) {
-			throw new Error("Unauthenticated");
-		}
-
-		await ctx.db.patch(args.consultationId, {
-			currentQuestion: args.question,
-			updatedAt: Date.now(),
-		});
-	},
-});
-
-export const answerQuestion = mutation({
-	args: {
-		consultationId: v.id("consultations"),
-		answer: v.any(),
-	},
-	handler: async (ctx, args) => {
-		const userId = await getAuthUserId(ctx);
-		if (!userId) {
-			throw new Error("Unauthenticated");
-		}
-
-		const consultation = await ctx.db.get(args.consultationId);
-		if (!consultation || !consultation.currentQuestion) {
-			throw new Error("No current question to answer");
-		}
-
-		const questionAnswer = {
-			questionId: consultation.currentQuestion.questionId,
-			question: consultation.currentQuestion.question,
-			questionType: consultation.currentQuestion.questionType,
-			answer: args.answer,
-			answeredAt: Date.now(),
-		};
-
-		await ctx.db.patch(args.consultationId, {
-			questionsAnswered: [...consultation.questionsAnswered, questionAnswer],
-			currentQuestion: undefined,
-			updatedAt: Date.now(),
-		});
-
-		return questionAnswer;
 	},
 });
 
 export const completeConsultation = mutation({
 	args: {
 		id: v.id("consultations"),
-		diagnosisResults: v.array(diagnosisResult),
+		diagnosisResults: v.optional(v.array(diagnosisResult)),
 		referredToDoctor: v.optional(v.string()),
 		referralNotes: v.optional(v.string()),
 	},
@@ -270,10 +228,9 @@ export const completeConsultation = mutation({
 		const now = Date.now();
 		await ctx.db.patch(args.id, {
 			status: args.referredToDoctor ? "referred" : "completed",
-			diagnosisResults: args.diagnosisResults,
+			diagnosisResults: args.diagnosisResults ?? consultation.diagnosisResults,
 			referredToDoctor: args.referredToDoctor,
 			referralNotes: args.referralNotes,
-			currentQuestion: undefined,
 			completedAt: now,
 			updatedAt: now,
 		});
@@ -296,6 +253,8 @@ export const cancelConsultation = mutation({
 		});
 	},
 });
+
+// ============ Queries ============
 
 export const getConsultation = query({
 	args: { id: v.id("consultations") },

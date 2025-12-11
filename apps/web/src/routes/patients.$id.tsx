@@ -42,7 +42,7 @@ function PatientDetailPage() {
 	};
 
 	return (
-		<div className="container max-w-5xl py-6">
+		<div className="container mx-auto max-w-5xl px-4 py-6">
 			<div className="mb-6">
 				<Button asChild variant="ghost" size="sm">
 					<Link to="/patients">
