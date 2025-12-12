@@ -1,0 +1,20 @@
+FROM oven/bun:1 AS base
+
+WORKDIR /app
+
+# Copy root configuration files
+COPY package.json bun.lock turbo.json ./
+
+# Copy workspace package.json files
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages/backend/package.json ./packages/backend/package.json
+COPY packages/config/package.json ./packages/config/package.json
+
+# Install dependencies
+RUN bun install
+
+# Copy the rest of the application code
+COPY . .
+
+# This Dockerfile is primarily for the build context.
+# The command will be overridden in docker-compose for dev.

@@ -12,7 +12,6 @@ import {
 	ArrowRight,
 	Clock,
 	Loader2,
-	Plus,
 	Search,
 	Stethoscope,
 	UserCheck,
@@ -104,7 +103,7 @@ function DashboardPage() {
 					</Button>
 					<Button asChild>
 						<Link to="/consultation/new" search={{ patientId: undefined }}>
-							<Plus className="mr-2 h-4 w-4" />
+							<Stethoscope className="mr-2 h-4 w-4" />
 							Consultație Nouă
 						</Link>
 					</Button>

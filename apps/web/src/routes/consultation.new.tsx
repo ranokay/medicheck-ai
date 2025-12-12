@@ -1,3 +1,10 @@
+/**
+ * Consultation Route
+ *
+ * Uses the Monarch API (Python FastAPI backend) for symptom checking.
+ * This route uses the DecisionGraphOrchestrator component for the symptom checker.
+ */
+
 import { api } from "@medicheck-ai/backend/convex/_generated/api";
 import type { Id } from "@medicheck-ai/backend/convex/_generated/dataModel";
 import {
@@ -7,10 +14,11 @@ import {
 	useNavigate,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { ArrowLeft, Beaker, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { DecisionGraphOrchestrator } from "@/components/decision-graph-orchestrator";
 import { PatientSearch } from "@/components/patient-search";
-import { ProductionSymptomChecker } from "@/components/production-symptom-checker";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -95,13 +103,17 @@ function NewConsultationPage() {
 
 	return (
 		<div className="container mx-auto max-w-4xl px-4 py-6">
-			<div className="mb-6">
+			<div className="mb-6 flex items-center justify-between">
 				<Button asChild variant="ghost" size="sm">
 					<Link to="/dashboard">
 						<ArrowLeft className="mr-2 h-4 w-4" />
 						Înapoi la Dashboard
 					</Link>
 				</Button>
+				<Badge variant="secondary" className="gap-1">
+					<Beaker className="h-3 w-3" />
+					Monarch API
+				</Badge>
 			</div>
 
 			{/* Step indicator */}
@@ -175,26 +187,23 @@ function NewConsultationPage() {
 						</Card>
 					)}
 
-					{/* Symptom Checker */}
-					{selectedPatient && (
-						<ProductionSymptomChecker
-							patientId={selectedPatientId}
-							consultationId={consultationId}
-							language="ro"
-							onComplete={(results) => {
-								console.log("Diagnosis results:", results);
-								// Navigate to the consultation detail page
-								if (consultationId) {
-									navigate({
-										to: "/consultation/$id",
-										params: { id: consultationId },
-									});
-								} else {
-									navigate({ to: "/dashboard" });
-								}
-							}}
-						/>
-					)}
+					{/* Symptom Checker using DecisionGraphOrchestrator */}
+					<DecisionGraphOrchestrator
+						patient={selectedPatient}
+						consultationId={consultationId}
+						onComplete={(results) => {
+							console.log("Diagnosis results:", results);
+							// Navigate to the consultation detail page
+							if (consultationId) {
+								navigate({
+									to: "/consultation/$id",
+									params: { id: consultationId },
+								});
+							} else {
+								navigate({ to: "/dashboard" });
+							}
+						}}
+					/>
 				</div>
 			)}
 		</div>

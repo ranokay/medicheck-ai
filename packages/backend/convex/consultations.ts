@@ -96,6 +96,12 @@ const vitalSigns = v.object({
 	height: v.optional(v.number()),
 });
 
+const chatMessage = v.object({
+	role: v.union(v.literal("user"), v.literal("assistant")),
+	content: v.string(),
+	timestamp: v.number(),
+});
+
 // ============ Consultation Management ============
 
 export const startConsultation = mutation({
@@ -211,6 +217,8 @@ export const completeConsultation = mutation({
 	args: {
 		id: v.id("consultations"),
 		diagnosisResults: v.optional(v.array(diagnosisResult)),
+		structuredInput: v.optional(structuredSymptomInput),
+		chatHistory: v.optional(v.array(chatMessage)),
 		referredToDoctor: v.optional(v.string()),
 		referralNotes: v.optional(v.string()),
 	},
@@ -229,6 +237,8 @@ export const completeConsultation = mutation({
 		await ctx.db.patch(args.id, {
 			status: args.referredToDoctor ? "referred" : "completed",
 			diagnosisResults: args.diagnosisResults ?? consultation.diagnosisResults,
+			structuredInput: args.structuredInput ?? consultation.structuredInput,
+			chatHistory: args.chatHistory,
 			referredToDoctor: args.referredToDoctor,
 			referralNotes: args.referralNotes,
 			completedAt: now,
@@ -251,6 +261,26 @@ export const cancelConsultation = mutation({
 			status: "cancelled",
 			updatedAt: Date.now(),
 		});
+	},
+});
+
+export const deleteConsultation = mutation({
+	args: { id: v.id("consultations") },
+	handler: async (ctx, args) => {
+		const userId = await getAuthUserId(ctx);
+		if (!userId) {
+			throw new Error("Unauthenticated");
+		}
+
+		const consultation = await ctx.db.get(args.id);
+		if (!consultation) {
+			throw new Error("Consultation not found");
+		}
+
+		// Delete the consultation
+		await ctx.db.delete(args.id);
+
+		return { success: true };
 	},
 });
 

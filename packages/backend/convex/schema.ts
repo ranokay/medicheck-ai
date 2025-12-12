@@ -106,6 +106,15 @@ const vitalSigns = v.object({
 	height: v.optional(v.number()), // cm
 });
 
+// ============ Chat History ============
+
+// Chat message from the diagnosis chat
+const chatMessage = v.object({
+	role: v.union(v.literal("user"), v.literal("assistant")),
+	content: v.string(),
+	timestamp: v.number(),
+});
+
 // ============ Schema Definition ============
 
 export default defineSchema({
@@ -199,6 +208,8 @@ export default defineSchema({
 		),
 		// Suggested additional tests
 		suggestedTests: v.optional(v.array(v.string())),
+		// Chat history from diagnosis Q&A
+		chatHistory: v.optional(v.array(chatMessage)),
 		// Referral info
 		referredToDoctor: v.optional(v.string()),
 		referralNotes: v.optional(v.string()),

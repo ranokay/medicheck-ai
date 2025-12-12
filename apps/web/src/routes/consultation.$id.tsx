@@ -12,12 +12,14 @@ import {
 	Activity,
 	AlertTriangle,
 	ArrowLeft,
+	Bot,
 	Calendar,
 	CheckCircle2,
 	Clock,
 	FileText,
 	MessageSquare,
 	Stethoscope,
+	Trash2,
 	User,
 } from "lucide-react";
 import { useState } from "react";
@@ -31,6 +33,16 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
@@ -51,6 +63,7 @@ type DynamicSymptom = NonNullable<StructuredInput["selectedSymptoms"]>[number];
 type DiagnosisResult = NonNullable<
 	ConsultationData["diagnosisResults"]
 >[number];
+type ChatMessage = NonNullable<ConsultationData["chatHistory"]>[number];
 
 export const Route = createFileRoute("/consultation/$id")({
 	component: ConsultationDetailPage,
@@ -66,6 +79,8 @@ function ConsultationDetailPage() {
 	const { id } = Route.useParams();
 	const navigate = useNavigate();
 	const [isCompleting, setIsCompleting] = useState(false);
+	const [isDeleting, setIsDeleting] = useState(false);
+	const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
 	const consultation = useQuery(api.consultations.getConsultation, {
 		id: id as Id<"consultations">,
@@ -79,6 +94,25 @@ function ConsultationDetailPage() {
 	const completeConsultation = useMutation(
 		api.consultations.completeConsultation,
 	);
+
+	const deleteConsultation = useMutation(api.consultations.deleteConsultation);
+
+	const handleDelete = async () => {
+		if (!consultation) return;
+
+		setIsDeleting(true);
+		try {
+			await deleteConsultation({ id: consultation._id });
+			toast.success("Consultația a fost ștearsă");
+			navigate({ to: "/dashboard" });
+		} catch (error) {
+			toast.error("Eroare la ștergerea consultației");
+			console.error(error);
+		} finally {
+			setIsDeleting(false);
+			setDeleteDialogOpen(false);
+		}
+	};
 
 	const handleComplete = async () => {
 		if (!consultation) return;
@@ -134,12 +168,55 @@ function ConsultationDetailPage() {
 					</Link>
 				</Button>
 
-				<Badge
-					variant="outline"
-					className={getStatusColor(consultation.status)}
-				>
-					{getStatusLabel(consultation.status)}
-				</Badge>
+				<div className="flex items-center gap-2">
+					<Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+						<DialogTrigger asChild>
+							<Button variant="outline" size="sm" className="text-destructive">
+								<Trash2 className="mr-2 h-4 w-4" />
+								Șterge
+							</Button>
+						</DialogTrigger>
+						<DialogContent>
+							<DialogHeader>
+								<DialogTitle>Șterge Consultația</DialogTitle>
+								<DialogDescription>
+									Ești sigur că vrei să ștergi această consultație? Această
+									acțiune este ireversibilă și toate datele asociate vor fi
+									pierdute permanent.
+								</DialogDescription>
+							</DialogHeader>
+							<DialogFooter className="gap-2 sm:gap-0">
+								<DialogClose asChild>
+									<Button variant="outline">Anulează</Button>
+								</DialogClose>
+								<Button
+									variant="destructive"
+									onClick={handleDelete}
+									disabled={isDeleting}
+								>
+									{isDeleting ? (
+										<>
+											<Clock className="mr-2 h-4 w-4 animate-spin" />
+											Se șterge...
+										</>
+									) : (
+										<>
+											<Trash2 className="mr-2 h-4 w-4" />
+											Șterge Definitiv
+										</>
+									)}
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
+
+					<Badge
+						variant="outline"
+						className={getStatusColor(consultation.status)}
+					>
+						{getStatusLabel(consultation.status)}
+					</Badge>
+				</div>
 			</div>
 
 			<div className="grid gap-6 md:grid-cols-3">
@@ -361,7 +438,7 @@ function ConsultationDetailPage() {
 															className="h-2 flex-1"
 														/>
 														<span className="font-medium text-sm">
-															{result.probability}%
+															{result.probability.toFixed(2)}%
 														</span>
 													</div>
 													{result.description && (
@@ -397,6 +474,47 @@ function ConsultationDetailPage() {
 								</CardContent>
 							</Card>
 						)}
+
+					{/* Chat History */}
+					{consultation.chatHistory && consultation.chatHistory.length > 0 && (
+						<Card>
+							<CardHeader>
+								<CardTitle className="flex items-center gap-2 text-lg">
+									<MessageSquare className="h-4 w-4" />
+									Istoricul Conversației
+								</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<div className="space-y-4">
+									{consultation.chatHistory.map(
+										(message: ChatMessage, index: number) => (
+											<div
+												key={`chat-${message.timestamp}-${index}`}
+												className={`flex gap-3 ${message.role === "assistant" ? "flex-row" : "flex-row-reverse"}`}
+											>
+												<div
+													className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${message.role === "assistant" ? "bg-primary/10" : "bg-muted"}`}
+												>
+													{message.role === "assistant" ? (
+														<Bot className="h-4 w-4 text-primary" />
+													) : (
+														<User className="h-4 w-4" />
+													)}
+												</div>
+												<div
+													className={`max-w-[80%] rounded-lg px-4 py-2 ${message.role === "assistant" ? "bg-muted" : "bg-primary text-primary-foreground"}`}
+												>
+													<p className="whitespace-pre-wrap text-sm">
+														{message.content}
+													</p>
+												</div>
+											</div>
+										),
+									)}
+								</div>
+							</CardContent>
+						</Card>
+					)}
 
 					{/* Referral Info */}
 					{consultation.referredToDoctor && (

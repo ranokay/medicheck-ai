@@ -1,0 +1,50 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/backend/node_modules
+    working_dir: /app/apps/web
+    command: sh -c "bun install && bun dev --host"
+    environment:
+      - VITE_CONVEX_URL
+      - VITE_CONVEX_SITE_URL
+    depends_on:
+      - monarch-mcp
+
+  monarch-mcp:
+    build:
+      context: ./packages/monarch-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./packages/monarch-mcp:/app
+      - /app/.venv
+    environment:
+      - OPENAI_API_KEY
+      - MONARCH_API_URL
+    command: uv run uvicorn monarch_mcp.api_server:app --host 0.0.0.0 --port 8000 --reload
+
+  convex:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/packages/backend/node_modules
+    working_dir: /app/packages/backend
+    command: sh -c "bun install && bun convex dev"
+    environment:
+      - CONVEX_DEPLOYMENT
+      - CONVEX_ACCESS_TOKEN
+    # Interactive mode might be needed for login if tokens aren't provided
+    stdin_open: true
+    tty: true

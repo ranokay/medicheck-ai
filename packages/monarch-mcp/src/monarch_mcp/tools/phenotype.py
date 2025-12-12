@@ -1,12 +1,16 @@
 from typing import Any, Dict, List
+
 import mcp.types as types
+
 from ..client import MonarchClient
 from .entity import EntityApi
+
 
 class PhenotypeApi:
     """
     Phenotype-specific queries and matching for Monarch, refactored for the v3 API.
     """
+
     def __init__(self):
         self.entity_api = EntityApi()
 
@@ -21,16 +25,19 @@ class PhenotypeApi:
         """
         Search for entities (e.g., diseases) that best match a profile of phenotypes.
         """
-        termset = ",".join(phenotype_ids)
+        # Filter out empty strings and validate
+        valid_ids = [pid.strip() for pid in phenotype_ids if pid and pid.strip()]
+        if not valid_ids:
+            return {"results": [], "message": "No valid phenotype IDs provided"}
+
+        termset = ",".join(valid_ids)
         params = {"metric": metric, "limit": limit}
-        return await client.get(f"semsim/search/{termset}/{search_group}", params=params)
+        return await client.get(
+            f"semsim/search/{termset}/{search_group}", params=params
+        )
 
     async def get_phenotype_gene_associations(
-        self,
-        client: MonarchClient,
-        phenotype_id: str,
-        limit: int = 20,
-        offset: int = 0
+        self, client: MonarchClient, phenotype_id: str, limit: int = 20, offset: int = 0
     ) -> Dict[str, Any]:
         """Get genes associated with a phenotype."""
         return await self.entity_api.get_associations(
@@ -38,15 +45,11 @@ class PhenotypeApi:
             subject=[phenotype_id],
             category=["biolink:GeneToPhenotypicFeatureAssociation"],
             limit=limit,
-            offset=offset
+            offset=offset,
         )
 
     async def get_phenotype_disease_associations(
-        self,
-        client: MonarchClient,
-        phenotype_id: str,
-        limit: int = 20,
-        offset: int = 0
+        self, client: MonarchClient, phenotype_id: str, limit: int = 20, offset: int = 0
     ) -> Dict[str, Any]:
         """Get diseases associated with a phenotype."""
         return await self.entity_api.get_associations(
@@ -54,15 +57,11 @@ class PhenotypeApi:
             subject=[phenotype_id],
             category=["biolink:DiseaseToPhenotypicFeatureAssociation"],
             limit=limit,
-            offset=offset
+            offset=offset,
         )
 
     async def get_diseases_with_phenotype(
-        self,
-        client: MonarchClient,
-        phenotype_id: str,
-        limit: int = 20,
-        offset: int = 0
+        self, client: MonarchClient, phenotype_id: str, limit: int = 20, offset: int = 0
     ) -> Dict[str, Any]:
         """Get diseases that have a specific phenotype."""
         return await self.entity_api.get_associations(
@@ -70,15 +69,11 @@ class PhenotypeApi:
             object=[phenotype_id],
             category=["biolink:DiseaseToPhenotypicFeatureAssociation"],
             limit=limit,
-            offset=offset
+            offset=offset,
         )
 
     async def get_genes_with_phenotype(
-        self,
-        client: MonarchClient,
-        phenotype_id: str,
-        limit: int = 20,
-        offset: int = 0
+        self, client: MonarchClient, phenotype_id: str, limit: int = 20, offset: int = 0
     ) -> Dict[str, Any]:
         """Get genes that cause a specific phenotype."""
         return await self.entity_api.get_associations(
@@ -86,8 +81,9 @@ class PhenotypeApi:
             object=[phenotype_id],
             category=["biolink:GeneToPhenotypicFeatureAssociation"],
             limit=limit,
-            offset=offset
+            offset=offset,
         )
+
 
 PHENOTYPE_TOOLS = [
     types.Tool(
@@ -99,18 +95,29 @@ PHENOTYPE_TOOLS = [
                 "phenotype_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of HPO phenotype IDs (e.g., ['HP:0001250', 'HP:0001251'])"
+                    "description": "List of HPO phenotype IDs (e.g., ['HP:0001250', 'HP:0001251'])",
                 },
                 "search_group": {
                     "type": "string",
                     "description": "Group of entities to search within.",
                     "default": "Human Diseases",
-                    "enum": ["Human Diseases", "Human Genes", "Mouse Genes", "Rat Genes", "Zebrafish Genes", "C. Elegans Genes"]
+                    "enum": [
+                        "Human Diseases",
+                        "Human Genes",
+                        "Mouse Genes",
+                        "Rat Genes",
+                        "Zebrafish Genes",
+                        "C. Elegans Genes",
+                    ],
                 },
-                "limit": {"type": "number", "description": "Number of matches to return.", "default": 10}
+                "limit": {
+                    "type": "number",
+                    "description": "Number of matches to return.",
+                    "default": 10,
+                },
             },
-            "required": ["phenotype_ids"]
-        }
+            "required": ["phenotype_ids"],
+        },
     ),
     types.Tool(
         name="get_phenotype_gene_associations",
@@ -118,12 +125,23 @@ PHENOTYPE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "phenotype_id": {"type": "string", "description": "Phenotype ID (e.g., HP:0001250 for seizure)"},
-                "limit": {"type": "number", "description": "Number of results per page.", "default": 20},
-                "offset": {"type": "number", "description": "Offset for pagination.", "default": 0}
+                "phenotype_id": {
+                    "type": "string",
+                    "description": "Phenotype ID (e.g., HP:0001250 for seizure)",
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Number of results per page.",
+                    "default": 20,
+                },
+                "offset": {
+                    "type": "number",
+                    "description": "Offset for pagination.",
+                    "default": 0,
+                },
             },
-            "required": ["phenotype_id"]
-        }
+            "required": ["phenotype_id"],
+        },
     ),
     types.Tool(
         name="get_phenotype_disease_associations",
@@ -131,12 +149,23 @@ PHENOTYPE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "phenotype_id": {"type": "string", "description": "Phenotype ID (e.g., HP:0001250)"},
-                "limit": {"type": "number", "description": "Number of results per page.", "default": 20},
-                "offset": {"type": "number", "description": "Offset for pagination.", "default": 0}
+                "phenotype_id": {
+                    "type": "string",
+                    "description": "Phenotype ID (e.g., HP:0001250)",
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Number of results per page.",
+                    "default": 20,
+                },
+                "offset": {
+                    "type": "number",
+                    "description": "Offset for pagination.",
+                    "default": 0,
+                },
             },
-            "required": ["phenotype_id"]
-        }
+            "required": ["phenotype_id"],
+        },
     ),
     types.Tool(
         name="get_diseases_with_phenotype",
@@ -144,12 +173,23 @@ PHENOTYPE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "phenotype_id": {"type": "string", "description": "Phenotype ID (e.g., HP:0001250)"},
-                "limit": {"type": "number", "description": "Number of results per page.", "default": 20},
-                "offset": {"type": "number", "description": "Offset for pagination.", "default": 0}
+                "phenotype_id": {
+                    "type": "string",
+                    "description": "Phenotype ID (e.g., HP:0001250)",
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Number of results per page.",
+                    "default": 20,
+                },
+                "offset": {
+                    "type": "number",
+                    "description": "Offset for pagination.",
+                    "default": 0,
+                },
             },
-            "required": ["phenotype_id"]
-        }
+            "required": ["phenotype_id"],
+        },
     ),
     types.Tool(
         name="get_genes_with_phenotype",
@@ -157,11 +197,22 @@ PHENOTYPE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "phenotype_id": {"type": "string", "description": "Phenotype ID (e.g., HP:0001250)"},
-                "limit": {"type": "number", "description": "Number of results per page.", "default": 20},
-                "offset": {"type": "number", "description": "Offset for pagination.", "default": 0}
+                "phenotype_id": {
+                    "type": "string",
+                    "description": "Phenotype ID (e.g., HP:0001250)",
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Number of results per page.",
+                    "default": 20,
+                },
+                "offset": {
+                    "type": "number",
+                    "description": "Offset for pagination.",
+                    "default": 0,
+                },
             },
-            "required": ["phenotype_id"]
-        }
-    )
+            "required": ["phenotype_id"],
+        },
+    ),
 ]
