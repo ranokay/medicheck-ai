@@ -85,10 +85,24 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # Browsers reject `Access-Control-Allow-Origin: *` when credentials are allowed.
+    # We don't rely on cookies for this API, so keep credentials disabled.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> dict:
+    return {
+        "status": "ok",
+        "service": "monarch-mcp",
+        "docs": "/docs",
+        "health": "/health",
+        "version": package_version,
+    }
+
 
 # Initialize API instances
 _entity_api = EntityApi()
