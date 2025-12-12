@@ -1,0 +1,4 @@
+{
+	"installCommand": "uv sync --active --link-mode=copy",
+	"buildCommand": "python -m compileall src"
+}
