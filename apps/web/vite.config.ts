@@ -12,7 +12,6 @@ export default defineConfig({
 		},
 	},
 	server: {
-		port: 3001,
-		allowedHosts: ["localhost", "diagnoze.alo-112.ro"],
+		allowedHosts: ["localhost", "diagnoze.alo-112.ro", "192.168.100.130"],
 	},
 });
