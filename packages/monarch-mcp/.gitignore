@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+/build/
+/dist/
+/downloads/
+/eggs/
+*.egg-info/
+/sdist/
+/wheels/
+*.egg
+*.tar.gz
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+pytest-report.html
+
+# IDE / Editor directories
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints
+
+uv.lock
+
+.env
