@@ -34,6 +34,7 @@ The Monarch Knowledge Graph integrates 33 biomedical resources:
 ## Quick Start
 
 ### 1. Install UV
+
 UV is a fast Python package and project manager.
 
 ```bash
@@ -41,6 +42,7 @@ pip install uv
 ```
 
 ### 2. Install MCPM (MCP Manager)
+
 MCPM is a package manager for MCP servers that simplifies installation and configuration.
 
 ```bash
@@ -48,12 +50,14 @@ pip install mcpm
 ```
 
 ### 3. Setup the MCP Server
+
 ```bash
 cd monarch-mcp
 uv sync
 ```
 
 ### 4. Add the Server to Claude Desktop
+
 ```bash
 # Make sure you're in the project directory
 cd monarch-mcp
@@ -66,6 +70,7 @@ mcpm import stdio monarch \
   --command "$(uv run which python)" \
   --args "-m monarch_mcp.server"
 ```
+
 Then restart Claude Desktop.
 
 ## Usage
@@ -80,8 +85,8 @@ You can choose a specific transport when starting the FastMCP server:
 
 ```bash
 uv run python -m monarch_mcp.server --transport stdio        # default (Claude Desktop)
-uv run python -m monarch_mcp.server --transport sse --host 0.0.0.0 --port 8000
-uv run python -m monarch_mcp.server --transport http --host 0.0.0.0 --port 8000
+uv run python -m monarch_mcp.server --transport sse --host 0.0.0.0 --port 8500
+uv run python -m monarch_mcp.server --transport http --host 0.0.0.0 --port 8500
 ```
 
 When running with `--transport sse` or `--transport http`, the server exposes a discovery document at `/.well-known/mcp.json` and a health check at `/`.

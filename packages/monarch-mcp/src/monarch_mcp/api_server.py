@@ -683,8 +683,8 @@ def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("PORT", "8000")),
-        help="Port to bind (default: 8000)",
+        default=int(os.getenv("PORT", "8500")),
+        help="Port to bind (default: 8500)",
     )
     parser.add_argument(
         "--reload",

@@ -1,7 +1,7 @@
 """FastMCP-backed server for Monarch Initiative MCP tools."""
+
 from __future__ import annotations
 
-import anyio
 import functools
 import inspect
 import logging
@@ -9,12 +9,13 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Optional
 
+import anyio
+import mcp.types as mcp_types
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from mcp.server.lowlevel.server import NotificationOptions
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-import mcp.types as mcp_types
-from mcp.server.lowlevel.server import NotificationOptions
 
 from . import __version__ as package_version
 from .client import MonarchClient
@@ -151,6 +152,7 @@ register_all_api_methods()
 # Deprecated module-level guidance
 # ---------------------------------------------------------------------------
 
+
 def __getattr__(name: str) -> Any:  # pragma: no cover - guidance only
     if name == "ALL_TOOLS":
         raise AttributeError(
@@ -178,8 +180,7 @@ async def discovery_endpoint(request: Request) -> JSONResponse:
     http_path = mcp._deprecated_settings.streamable_http_path.lstrip("/")
 
     capabilities = mcp._mcp_server.get_capabilities(
-        NotificationOptions(),
-        experimental_capabilities={}
+        NotificationOptions(), experimental_capabilities={}
     )
 
     transports: dict[str, dict[str, str]] = {
@@ -214,7 +215,9 @@ async def root_health(_: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-@mcp.custom_route(mcp._deprecated_settings.sse_path, methods=["POST"], include_in_schema=False)
+@mcp.custom_route(
+    mcp._deprecated_settings.sse_path, methods=["POST"], include_in_schema=False
+)
 async def sse_message_fallback(_: Request) -> Response:
     """Gracefully handle clients that POST to the SSE endpoint."""
 
@@ -245,8 +248,8 @@ def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("FASTMCP_SERVER_PORT", "8000")),
-        help="Port for SSE transport (default: 8000)",
+        default=int(os.getenv("FASTMCP_SERVER_PORT", "8500")),
+        help="Port for SSE transport (default: 8500)",
     )
     parser.add_argument(
         "--verbose",
@@ -265,7 +268,12 @@ def main() -> None:
         if hasattr(mcp, "settings"):
             mcp.settings.host = args.host  # type: ignore[attr-defined]
             mcp.settings.port = args.port  # type: ignore[attr-defined]
-        logger.info("Configured %s host=%s port=%s", args.transport.upper(), args.host, args.port)
+        logger.info(
+            "Configured %s host=%s port=%s",
+            args.transport.upper(),
+            args.host,
+            args.port,
+        )
 
     logger.info(
         "Starting Monarch MCP server (transport=%s, host=%s, port=%s)",
@@ -276,6 +284,7 @@ def main() -> None:
 
     try:
         if args.transport == "http":
+
             async def run_http() -> None:
                 await mcp.run_http_async(host=args.host, port=args.port)
 

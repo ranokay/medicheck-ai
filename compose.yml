@@ -23,14 +23,14 @@ services:
       context: ./packages/monarch-mcp
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8500:8500"
     volumes:
       - ./packages/monarch-mcp:/app
       - /app/.venv
     environment:
       - OPENAI_API_KEY
       - MONARCH_API_URL
-    command: uv run uvicorn monarch_mcp.api_server:app --host 0.0.0.0 --port 8000 --reload
+    command: uv run uvicorn monarch_mcp.api_server:app --host 0.0.0.0 --port 8500 --reload
 
   convex:
     build:
