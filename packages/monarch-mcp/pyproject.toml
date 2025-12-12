@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 app = "monarch_mcp.api_server:app"
+monarch-api = "monarch_mcp.api_server:main"
 monarch-mcp = "monarch_mcp.server:main"
 
 [build-system]
