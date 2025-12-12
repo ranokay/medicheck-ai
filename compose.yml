@@ -48,3 +48,10 @@ services:
     # Interactive mode might be needed for login if tokens aren't provided
     stdin_open: true
     tty: true
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    depends_on:
+      - web
+      - monarch-mcp
