@@ -11,4 +11,8 @@ export default defineConfig({
 			"@": path.resolve(__dirname, "./src"),
 		},
 	},
+	server: {
+		port: 3001,
+		allowedHosts: ["localhost", "diagnoze.alo-112.ro"],
+	},
 });
